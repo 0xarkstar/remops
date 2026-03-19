@@ -1,0 +1,181 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1773959325290,
+  "projectRoot": "/Users/arkstar/Projects/remops",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Go",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "go.mod"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "go",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "examples"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "cmd": {
+      "path": "cmd",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1773959325275,
+      "keyFiles": [
+        "root.go"
+      ]
+    },
+    "examples": {
+      "path": "examples",
+      "purpose": "Example code",
+      "fileCount": 2,
+      "lastAccessed": 1773959325275,
+      "keyFiles": [
+        "dogfood.yaml",
+        "minimal.yaml"
+      ]
+    },
+    "internal": {
+      "path": "internal",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1773959325276,
+      "keyFiles": []
+    },
+    "skills": {
+      "path": "skills",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1773959325276,
+      "keyFiles": []
+    },
+    "internal/config": {
+      "path": "internal/config",
+      "purpose": "Configuration files",
+      "fileCount": 3,
+      "lastAccessed": 1773959325278,
+      "keyFiles": [
+        "config.go",
+        "defaults.go",
+        "types.go"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "internal/config/types.go",
+      "accessCount": 3,
+      "lastAccessed": 1773959358680,
+      "type": "file"
+    },
+    {
+      "path": "go.mod",
+      "accessCount": 2,
+      "lastAccessed": 1773959361963,
+      "type": "file"
+    },
+    {
+      "path": "internal/transport/transport.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959346496,
+      "type": "file"
+    },
+    {
+      "path": "internal/transport/pool.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959354190,
+      "type": "file"
+    },
+    {
+      "path": "internal/config/defaults.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959355967,
+      "type": "file"
+    },
+    {
+      "path": "cmd/root.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959358262,
+      "type": "file"
+    },
+    {
+      "path": "internal/config/config.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959358733,
+      "type": "file"
+    },
+    {
+      "path": "internal/transport/local.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959361098,
+      "type": "file"
+    },
+    {
+      "path": "internal/security/profile.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959370486,
+      "type": "file"
+    },
+    {
+      "path": "internal/security/validate.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959376173,
+      "type": "file"
+    },
+    {
+      "path": "cmd/completion.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959379557,
+      "type": "file"
+    },
+    {
+      "path": "internal/security/sanitize.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959379817,
+      "type": "file"
+    },
+    {
+      "path": "internal/security/audit.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959387049,
+      "type": "file"
+    },
+    {
+      "path": "internal/transport/ssh.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959389308,
+      "type": "file"
+    },
+    {
+      "path": "internal/security/ratelimit.go",
+      "accessCount": 1,
+      "lastAccessed": 1773959396798,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
