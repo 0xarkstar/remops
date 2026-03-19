@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"go mod tidy 2>&1\",\"timeout\":120000,\"description\":\"Resolve Go module dependencies\"}",
+  "error": "Exit code 1\ngo: downloading github.com/spf13/cobra v1.8.1\ngo: downloading gopkg.in/yaml.v3 v3.0.1\ngo: downloading golang.org/x/term v0.27.0\ngo: downloading github.com/fatih/color v1.18.0\ngo: github.com/0xarkstar/remops/cmd imports\n\tgithub.com/spf13/cobra imports\n\tgithub.com/inconshreveable/mousetrap: github.com/olekukonez/tablewriter@v0.0.5: reading github.com/olekukonez/tablewriter/go.mod at revision v0.0.5: git ls-remote -q --end-of-options https://github.com/olekukonez/tablewriter in /Users/a...",
+  "timestamp": "2026-03-19T22:26:34.507Z",
+  "retry_count": 1
+}

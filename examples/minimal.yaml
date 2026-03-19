@@ -1,0 +1,15 @@
+version: 1
+
+hosts:
+  myserver:
+    address: 192.168.1.100
+    user: deploy
+
+services:
+  webapp:
+    host: myserver
+    container: webapp
+
+profiles:
+  admin:
+    level: admin
