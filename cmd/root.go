@@ -44,9 +44,12 @@ It provides structured output, permission levels, and out-of-band approval
 for safe AI agent integration.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip config loading for help, completion, and version
-		if cmd.Name() == "help" || cmd.Name() == "completion" {
+		// Skip config loading for help, completion, version, and root
+		if cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Name() == "remops" {
 			return nil
 		}
 
@@ -74,6 +77,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagSanitize, "sanitize", false, "Sanitize output (strip LLM directives)")
 	rootCmd.PersistentFlags().StringVar(&flagTimeout, "timeout", "", "Override per-host timeout")
 	rootCmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "Show what would happen without executing")
+
+	// Register dynamic completions after flags are defined.
+	registerCompletions()
 }
 
 // Execute runs the root command.

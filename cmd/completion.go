@@ -50,17 +50,13 @@ To load completions:
 
 func init() {
 	rootCmd.AddCommand(completionCmd)
+}
 
-	// Register dynamic completions for persistent flags.
-	if err := rootCmd.RegisterFlagCompletionFunc("host", completeHostNames); err != nil {
-		panic(err)
-	}
-	if err := rootCmd.RegisterFlagCompletionFunc("profile", completeProfileNames); err != nil {
-		panic(err)
-	}
-	if err := rootCmd.RegisterFlagCompletionFunc("tag", completeTags); err != nil {
-		panic(err)
-	}
+// registerCompletions is called from root.go init after flags are defined.
+func registerCompletions() {
+	_ = rootCmd.RegisterFlagCompletionFunc("host", completeHostNames)
+	_ = rootCmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
+	_ = rootCmd.RegisterFlagCompletionFunc("tag", completeTags)
 }
 
 // loadConfigSilent loads config without returning errors — safe for completions.
