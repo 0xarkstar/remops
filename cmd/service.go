@@ -34,7 +34,7 @@ func init() {
 	}
 	logsCmd.Flags().IntVar(&flagServiceLogsTail, "tail", 100, "Number of log lines to show")
 	logsCmd.Flags().StringVar(&flagServiceLogsSince, "since", "", "Show logs since duration or timestamp (e.g. 1h, 2024-01-01T00:00:00)")
-	logsCmd.Flags().BoolVarP(&flagServiceLogsFollow, "follow", "f", false, "Follow log output")
+	logsCmd.Flags().BoolVar(&flagServiceLogsFollow, "follow", false, "Follow log output")
 
 	restartCmd := &cobra.Command{
 		Use:         "restart <name>",

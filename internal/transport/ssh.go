@@ -29,8 +29,13 @@ func NewSSHTransport(cfg *config.Config) *SSHTransport {
 	}
 }
 
+// sshPathPrefix is prepended to commands to ensure common binary locations are in PATH.
+// Non-interactive SSH sessions often have a minimal PATH that excludes /usr/local/bin.
+const sshPathPrefix = "export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH && "
+
 // Exec runs cmd on the named host and returns the result.
 func (s *SSHTransport) Exec(ctx context.Context, hostName string, cmd string) (ExecResult, error) {
+	cmd = sshPathPrefix + cmd
 	start := time.Now()
 
 	client, err := s.client(hostName)
@@ -84,6 +89,7 @@ func (s *SSHTransport) Exec(ctx context.Context, hostName string, cmd string) (E
 
 // Stream runs cmd on the named host and returns a reader over its combined output.
 func (s *SSHTransport) Stream(ctx context.Context, hostName string, cmd string) (io.ReadCloser, error) {
+	cmd = sshPathPrefix + cmd
 	client, err := s.client(hostName)
 	if err != nil {
 		return nil, err
