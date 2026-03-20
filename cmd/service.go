@@ -22,7 +22,6 @@ var (
 	flagServiceLogsTail   int
 	flagServiceLogsSince  string
 	flagServiceLogsFollow bool
-	flagServiceConfirm    bool
 )
 
 func init() {
@@ -44,7 +43,7 @@ func init() {
 		Args:        cobra.ExactArgs(1),
 		RunE:        runServiceWrite("restart"),
 	}
-	restartCmd.Flags().BoolVar(&flagServiceConfirm, "confirm", false, "Confirm execution (omit to see dry-run)")
+	restartCmd.Flags().Bool("confirm", false, "Confirm execution (omit to see dry-run)")
 
 	stopCmd := &cobra.Command{
 		Use:         "stop <name>",
@@ -53,7 +52,7 @@ func init() {
 		Args:        cobra.ExactArgs(1),
 		RunE:        runServiceWrite("stop"),
 	}
-	stopCmd.Flags().BoolVar(&flagServiceConfirm, "confirm", false, "Confirm execution (omit to see dry-run)")
+	stopCmd.Flags().Bool("confirm", false, "Confirm execution (omit to see dry-run)")
 
 	startCmd := &cobra.Command{
 		Use:         "start <name>",
@@ -62,7 +61,7 @@ func init() {
 		Args:        cobra.ExactArgs(1),
 		RunE:        runServiceWrite("start"),
 	}
-	startCmd.Flags().BoolVar(&flagServiceConfirm, "confirm", false, "Confirm execution (omit to see dry-run)")
+	startCmd.Flags().Bool("confirm", false, "Confirm execution (omit to see dry-run)")
 
 	serviceCmd.AddCommand(logsCmd, restartCmd, stopCmd, startCmd)
 	rootCmd.AddCommand(serviceCmd)
@@ -135,9 +134,6 @@ func buildLogsCmd(container string) string {
 	if flagServiceLogsSince != "" {
 		parts = append(parts, "--since", flagServiceLogsSince)
 	}
-	if flagServiceLogsFollow {
-		parts = append(parts, "--follow")
-	}
 	return strings.Join(parts, " ")
 }
 
@@ -155,7 +151,8 @@ func runServiceWrite(action string) func(*cobra.Command, []string) error {
 
 		dockerCmd := fmt.Sprintf("docker %s %s", action, svc.Container)
 
-		if flagDryRun || !flagServiceConfirm {
+		confirm, _ := cmd.Flags().GetBool("confirm")
+		if flagDryRun || !confirm {
 			fmt.Printf("[dry-run] would execute on %s: %s\n", svc.Host, dockerCmd)
 			fmt.Println("Pass --confirm to execute this operation.")
 			return nil

@@ -2,3 +2,4 @@ remops
 *.exe
 .omc/
 dist/
+coverage.out

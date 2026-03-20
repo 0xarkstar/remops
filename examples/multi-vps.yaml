@@ -1,0 +1,72 @@
+# multi-vps.yaml — Template for VPS operators with 3 hosts
+#
+# Usage:
+#   REMOPS_CONFIG=examples/multi-vps.yaml remops status
+#
+# Replace placeholder IPs and usernames with your actual values.
+# Store secrets as environment variables (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID).
+
+version: 1
+
+hosts:
+  web:
+    address: 1.2.3.4
+    user: deploy
+    timeout: 10s
+    description: "Web / reverse proxy server"
+    tags: [production, web]
+
+  db:
+    address: 5.6.7.8
+    user: deploy
+    timeout: 10s
+    description: "Database server"
+    tags: [production, database]
+
+  worker:
+    address: 9.10.11.12
+    user: deploy
+    timeout: 10s
+    description: "Background worker / cache server"
+    tags: [production, worker]
+
+services:
+  nginx:
+    host: web
+    container: nginx
+    tags: [proxy]
+
+  postgres:
+    host: db
+    container: postgres
+    tags: [database]
+
+  redis:
+    host: worker
+    container: redis
+    tags: [cache]
+
+  app:
+    host: web
+    container: app
+    tags: [application]
+
+profiles:
+  viewer:
+    level: viewer
+
+  operator:
+    level: operator
+    require_dry_run: true
+    approval: out-of-band
+
+  admin:
+    level: admin
+
+approval:
+  method: telegram
+  bot_token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
+  timeout: 5m
+  rate_limit:
+    max_writes_per_host_per_hour: 5
