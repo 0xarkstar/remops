@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bufio"
+	"strings"
 	"testing"
 
 	"github.com/0xarkstar/remops/internal/config"
@@ -83,5 +85,37 @@ func TestBuildDefaultConfigProducesValidYAML(t *testing.T) {
 	}
 	if h.Port != 2222 {
 		t.Errorf("roundtrip: expected port 2222, got %d", h.Port)
+	}
+}
+
+func TestPrompt_UserInput(t *testing.T) {
+	scanner := bufio.NewScanner(strings.NewReader("myvalue\n"))
+	got := prompt(scanner, "Enter value", "default")
+	if got != "myvalue" {
+		t.Errorf("prompt() = %q, want %q", got, "myvalue")
+	}
+}
+
+func TestPrompt_EmptyInput_UsesDefault(t *testing.T) {
+	scanner := bufio.NewScanner(strings.NewReader("\n"))
+	got := prompt(scanner, "Enter value", "default")
+	if got != "default" {
+		t.Errorf("prompt() = %q, want %q", got, "default")
+	}
+}
+
+func TestPrompt_EmptyInput_NoDefault(t *testing.T) {
+	scanner := bufio.NewScanner(strings.NewReader("\n"))
+	got := prompt(scanner, "Enter value", "")
+	if got != "" {
+		t.Errorf("prompt() = %q, want empty string", got)
+	}
+}
+
+func TestPrompt_WhitespaceStripped(t *testing.T) {
+	scanner := bufio.NewScanner(strings.NewReader("  trimmed  \n"))
+	got := prompt(scanner, "Enter value", "default")
+	if got != "trimmed" {
+		t.Errorf("prompt() = %q, want %q", got, "trimmed")
 	}
 }

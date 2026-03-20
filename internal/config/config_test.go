@@ -98,6 +98,36 @@ func TestParseInvalid(t *testing.T) {
 			yaml: "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\nprofiles:\n  bad:\n    level: superuser\n",
 			wantErr: "invalid level",
 		},
+		{
+			name:    "telegram approval empty bot_token",
+			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\napproval:\n  method: telegram\n  bot_token: \"\"\n  chat_id: \"123\"\n",
+			wantErr: "non-empty bot_token",
+		},
+		{
+			name:    "telegram approval empty chat_id",
+			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\napproval:\n  method: telegram\n  bot_token: \"tok123\"\n  chat_id: \"\"\n",
+			wantErr: "non-empty chat_id",
+		},
+		{
+			name:    "db missing engine",
+			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\nservices:\n  svc1:\n    host: h1\n    container: c1\n    db:\n      user: admin\n      database: mydb\n",
+			wantErr: "db.engine is required",
+		},
+		{
+			name:    "db invalid engine",
+			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\nservices:\n  svc1:\n    host: h1\n    container: c1\n    db:\n      engine: sqlite\n      user: admin\n      database: mydb\n",
+			wantErr: "unsupported db.engine",
+		},
+		{
+			name:    "db missing user",
+			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\nservices:\n  svc1:\n    host: h1\n    container: c1\n    db:\n      engine: postgresql\n      database: mydb\n",
+			wantErr: "db.user is required",
+		},
+		{
+			name:    "db missing database",
+			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\nservices:\n  svc1:\n    host: h1\n    container: c1\n    db:\n      engine: mysql\n      user: root\n",
+			wantErr: "db.database is required",
+		},
 	}
 
 	for _, tc := range tests {

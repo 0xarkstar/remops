@@ -71,6 +71,36 @@ func TestValidateServiceName(t *testing.T) {
 	}
 }
 
+func TestValidateContainerName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"valid", "myapp_container", false},
+		{"valid with dot", "my.container", false},
+		{"valid with hyphen", "my-container-1", false},
+		{"empty", "", true},
+		{"semicolon", "container;evil", true},
+		{"dollar", "container$bad", true},
+		{"space", "container bad", true},
+		{"slash", "container/bad", true},
+		{"backtick", "container`bad", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateContainerName(tc.input)
+			if tc.wantErr && err == nil {
+				t.Errorf("ValidateContainerName(%q): expected error, got nil", tc.input)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("ValidateContainerName(%q): unexpected error: %v", tc.input, err)
+			}
+		})
+	}
+}
+
 func TestDetectShellInjection(t *testing.T) {
 	tests := []struct {
 		name    string

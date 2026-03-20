@@ -32,6 +32,17 @@ func ValidateServiceName(name string) error {
 	return nil
 }
 
+// ValidateContainerName checks that a container name is safe.
+func ValidateContainerName(name string) error {
+	if name == "" {
+		return fmt.Errorf("container name must not be empty")
+	}
+	if !safeNameRe.MatchString(name) {
+		return fmt.Errorf("invalid container name %q: must contain only alphanumeric characters, hyphens, underscores, or dots", name)
+	}
+	return nil
+}
+
 // DetectShellInjection checks for dangerous shell characters in input.
 // Rejects: ; | & ` $ ( ) { } < > \ newline
 func DetectShellInjection(input string) error {

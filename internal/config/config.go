@@ -102,6 +102,34 @@ func validate(cfg *Config) error {
 		}
 	}
 
+	if cfg.Approval != nil && cfg.Approval.Method == "telegram" {
+		if cfg.Approval.BotToken == "" {
+			return fmt.Errorf("approval: telegram method requires non-empty bot_token")
+		}
+		if cfg.Approval.ChatID == "" {
+			return fmt.Errorf("approval: telegram method requires non-empty chat_id")
+		}
+	}
+
+	for name, svc := range cfg.Services {
+		if svc.DB != nil {
+			switch svc.DB.Engine {
+			case "postgresql", "postgres", "mysql":
+				// valid
+			case "":
+				return fmt.Errorf("service %q: db.engine is required", name)
+			default:
+				return fmt.Errorf("service %q: unsupported db.engine %q (must be postgresql or mysql)", name, svc.DB.Engine)
+			}
+			if svc.DB.User == "" {
+				return fmt.Errorf("service %q: db.user is required", name)
+			}
+			if svc.DB.Database == "" {
+				return fmt.Errorf("service %q: db.database is required", name)
+			}
+		}
+	}
+
 	return nil
 }
 

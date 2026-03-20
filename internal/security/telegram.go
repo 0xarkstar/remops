@@ -94,7 +94,11 @@ func (t *TelegramApprover) sendApprovalMessage(action, uuid string) (int64, erro
 		return 0, err
 	}
 	if !resp.OK {
-		return 0, fmt.Errorf("telegram sendMessage: %s", resp.Description)
+		msg := fmt.Sprintf("telegram sendMessage: %s", resp.Description)
+		if strings.Contains(resp.Description, "chat not found") {
+			msg += " (hint: ensure the bot is added to the chat group)"
+		}
+		return 0, fmt.Errorf("%s", msg)
 	}
 	return resp.Result.MessageID, nil
 }

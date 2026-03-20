@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/0xarkstar/remops/internal/config"
 	"github.com/0xarkstar/remops/internal/mcp"
@@ -62,8 +64,11 @@ All logging goes to stderr. Do not run interactively.`,
 			opts = append(opts, mcp.WithAuditLogger(al))
 		}
 
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+
 		server := mcp.NewServer(cfg, t, opts...)
-		return server.Run(context.Background())
+		return server.Run(ctx)
 	},
 }
 

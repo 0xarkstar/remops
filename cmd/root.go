@@ -102,10 +102,21 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "Show what would happen without executing")
 
 	// Register built-in plugins and add their commands.
-	_ = pluginRegistry.Register(alerting.New())
+	if err := pluginRegistry.Register(alerting.New()); err != nil {
+		fmt.Fprintf(os.Stderr, "plugin registration error: %v\n", err)
+	}
+	existingCmds := make(map[string]bool)
+	for _, c := range rootCmd.Commands() {
+		existingCmds[c.Name()] = true
+	}
 	for _, p := range pluginRegistry.All() {
 		for _, cmd := range p.Commands() {
+			if existingCmds[cmd.Name()] {
+				fmt.Fprintf(os.Stderr, "plugin command %q conflicts with existing command, skipping\n", cmd.Name())
+				continue
+			}
 			rootCmd.AddCommand(cmd)
+			existingCmds[cmd.Name()] = true
 		}
 	}
 

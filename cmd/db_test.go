@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/0xarkstar/remops/internal/config"
+	"github.com/spf13/cobra"
 )
 
 func TestEscapeSingleQuotes(t *testing.T) {
@@ -60,7 +63,7 @@ func TestBuildDBExecCmd_MySQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "docker exec mysql_db mysql -u root -psecret app -e 'SHOW TABLES'"
+	want := "docker exec -e MYSQL_PWD='secret' mysql_db mysql -u root app -e 'SHOW TABLES'"
 	if cmd != want {
 		t.Errorf("got %q, want %q", cmd, want)
 	}
@@ -117,12 +120,140 @@ func TestIsWriteQuery(t *testing.T) {
 		{"UPDATE t SET x=1", true},
 		{"DELETE FROM t", true},
 		{"DROP TABLE t", true},
+		{"ALTER TABLE t ADD COLUMN x INT", true},
+		{"TRUNCATE TABLE t", true},
+		{"WITH cte AS (SELECT 1) DELETE FROM t", true},
 	}
 	for _, tt := range tests {
 		got := isWriteQuery(tt.sql)
 		if got != tt.write {
 			t.Errorf("isWriteQuery(%q) = %v, want %v", tt.sql, got, tt.write)
 		}
+	}
+}
+
+func TestRunDBQuery_ServiceNoDB(t *testing.T) {
+	origCfg := cfg
+	cfg = &config.Config{
+		Version: 1,
+		Hosts:   map[string]config.Host{"prod": {Address: "1.2.3.4"}},
+		Services: map[string]config.Service{
+			"app": {Host: "prod", Container: "app_container"}, // no DB
+		},
+	}
+	t.Cleanup(func() { cfg = origCfg })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	err := runDBQuery(cmd, []string{"app", "SELECT 1"})
+	if err == nil {
+		t.Fatal("expected error when service has no db config")
+	}
+	if !strings.Contains(err.Error(), "no db config") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunDBQuery_UnknownService(t *testing.T) {
+	origCfg := cfg
+	cfg = &config.Config{
+		Version:  1,
+		Hosts:    map[string]config.Host{"prod": {Address: "1.2.3.4"}},
+		Services: map[string]config.Service{},
+	}
+	t.Cleanup(func() { cfg = origCfg })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	err := runDBQuery(cmd, []string{"missing", "SELECT 1"})
+	if err == nil {
+		t.Fatal("expected error for unknown service")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunDBPreset_NilConfig(t *testing.T) {
+	origCfg := cfg
+	cfg = nil
+	t.Cleanup(func() { cfg = origCfg })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	err := runDBPreset(cmd, []string{"mypreset"})
+	if err == nil || err.Error() != "config not loaded" {
+		t.Errorf("expected 'config not loaded', got %v", err)
+	}
+}
+
+func TestRunDBPreset_UnknownPreset_NoPresets(t *testing.T) {
+	origCfg := cfg
+	cfg = &config.Config{
+		Version:  1,
+		Hosts:    map[string]config.Host{"prod": {Address: "1.2.3.4"}},
+		Services: map[string]config.Service{},
+		Presets:  map[string]string{},
+	}
+	t.Cleanup(func() { cfg = origCfg })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	err := runDBPreset(cmd, []string{"missing"})
+	if err == nil {
+		t.Fatal("expected error for unknown preset")
+	}
+	if !strings.Contains(err.Error(), "No presets defined") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunDBPreset_UnknownPreset_WithPresets(t *testing.T) {
+	origCfg := cfg
+	cfg = &config.Config{
+		Version:  1,
+		Hosts:    map[string]config.Host{"prod": {Address: "1.2.3.4"}},
+		Services: map[string]config.Service{},
+		Presets:  map[string]string{"slow_queries": "SELECT 1"},
+	}
+	t.Cleanup(func() { cfg = origCfg })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	err := runDBPreset(cmd, []string{"missing"})
+	if err == nil {
+		t.Fatal("expected error for unknown preset")
+	}
+	if !strings.Contains(err.Error(), "Available presets") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunDBPreset_NoServiceWithDB(t *testing.T) {
+	origCfg := cfg
+	origSvc := flagDBService
+	cfg = &config.Config{
+		Version: 1,
+		Hosts:   map[string]config.Host{"prod": {Address: "1.2.3.4"}},
+		Services: map[string]config.Service{
+			"app": {Host: "prod", Container: "app"}, // no DB config
+		},
+		Presets: map[string]string{"slow_queries": "SELECT 1"},
+	}
+	flagDBService = ""
+	t.Cleanup(func() {
+		cfg = origCfg
+		flagDBService = origSvc
+	})
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	err := runDBPreset(cmd, []string{"slow_queries"})
+	if err == nil {
+		t.Fatal("expected error when no service has db config")
+	}
+	if !strings.Contains(err.Error(), "no service with db config") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 

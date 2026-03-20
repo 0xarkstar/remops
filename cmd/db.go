@@ -8,6 +8,7 @@ import (
 	"github.com/0xarkstar/remops/internal/config"
 	"github.com/0xarkstar/remops/internal/security"
 	"github.com/0xarkstar/remops/internal/transport"
+
 	"github.com/spf13/cobra"
 )
 
@@ -54,21 +55,16 @@ func buildDBExecCmd(svc config.Service, sql string) (string, error) {
 		return fmt.Sprintf("docker exec %s psql -U %s -d %s -c '%s'",
 			svc.Container, db.User, db.Database, escaped), nil
 	case "mysql":
-		return fmt.Sprintf("docker exec %s mysql -u %s -p%s %s -e '%s'",
-			svc.Container, db.User, db.Password, db.Database, escaped), nil
+		return fmt.Sprintf("docker exec -e MYSQL_PWD='%s' %s mysql -u %s %s -e '%s'",
+			escapeSingleQuotes(db.Password), svc.Container, db.User, db.Database, escaped), nil
 	default:
 		return "", fmt.Errorf("unsupported db engine %q (supported: postgresql, mysql)", db.Engine)
 	}
 }
 
-// isWriteQuery returns true if the SQL appears to be a non-SELECT (write) statement.
+// isWriteQuery delegates to security.IsWriteQuery for centralized SQL classification.
 func isWriteQuery(sql string) bool {
-	upper := strings.ToUpper(strings.TrimSpace(sql))
-	return !strings.HasPrefix(upper, "SELECT") &&
-		!strings.HasPrefix(upper, "SHOW") &&
-		!strings.HasPrefix(upper, "EXPLAIN") &&
-		!strings.HasPrefix(upper, "DESCRIBE") &&
-		!strings.HasPrefix(upper, "WITH")
+	return security.IsWriteQuery(sql)
 }
 
 func runDBQuery(cmd *cobra.Command, args []string) error {

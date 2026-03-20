@@ -123,6 +123,10 @@ func registerTools(s *Server) {
 					return nil, fmt.Errorf("unknown service: %s", p.Service)
 				}
 
+				if err := security.ValidateContainerName(svc.Container); err != nil {
+					return nil, err
+				}
+
 				cmd := "docker logs " + svc.Container
 				if p.Tail > 0 {
 					cmd += fmt.Sprintf(" --tail %d", p.Tail)
@@ -296,12 +300,14 @@ func registerTools(s *Server) {
 					return nil, fmt.Errorf("confirm must be true to execute command")
 				}
 				if s.auditLogger != nil {
-					_ = s.auditLogger.Log(security.AuditEntry{
+					if err := s.auditLogger.Log(security.AuditEntry{
 						Command: p.Command,
 						Host:    p.Host,
 						Profile: s.profileLevel.String(),
 						Result:  "exec",
-					})
+					}); err != nil {
+						fmt.Fprintf(os.Stderr, "mcp: audit log: %v\n", err)
+					}
 				}
 				res, err := s.transport.Exec(ctx, p.Host, p.Command)
 				if err != nil {
@@ -387,6 +393,16 @@ func registerTools(s *Server) {
 				return nil, fmt.Errorf("service %q has no db config", p.Service)
 			}
 
+			if security.IsWriteQuery(p.Query) {
+				if err := security.CheckPermission(s.profileLevel, config.LevelOperator); err != nil {
+					return nil, fmt.Errorf("write query requires operator permission: %w", err)
+				}
+			}
+
+			if err := security.ValidateContainerName(svc.Container); err != nil {
+				return nil, err
+			}
+
 			db := svc.DB
 			escaped := escapeSingleQuotes(p.Query)
 			var cmd string
@@ -395,8 +411,8 @@ func registerTools(s *Server) {
 				cmd = fmt.Sprintf("docker exec %s psql -U %s -d %s -c '%s'",
 					svc.Container, db.User, db.Database, escaped)
 			case "mysql":
-				cmd = fmt.Sprintf("docker exec %s mysql -u %s -p%s %s -e '%s'",
-					svc.Container, db.User, db.Password, db.Database, escaped)
+				cmd = fmt.Sprintf("docker exec -e MYSQL_PWD='%s' %s mysql -u %s %s -e '%s'",
+					escapeSingleQuotes(db.Password), svc.Container, db.User, db.Database, escaped)
 			default:
 				return nil, fmt.Errorf("unsupported db engine %q", db.Engine)
 			}
@@ -466,9 +482,16 @@ func serviceLifecycle(ctx context.Context, s *Server, raw json.RawMessage, actio
 	if !ok {
 		return nil, fmt.Errorf("unknown service: %s", p.Service)
 	}
+	if err := security.ValidateContainerName(svc.Container); err != nil {
+		return nil, err
+	}
 
 	if s.approver != nil {
-		approvalCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		timeout := 5 * time.Minute
+		if s.config.Approval != nil {
+			timeout = s.config.Approval.EffectiveTimeout()
+		}
+		approvalCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		desc := fmt.Sprintf("%s service %s on %s", action, p.Service, svc.Host)
 		approved, err := s.approver.RequestApproval(approvalCtx, desc)
