@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/0xarkstar/remops/internal/config"
 	"github.com/0xarkstar/remops/internal/output"
@@ -119,6 +120,8 @@ func resolveHosts() []string {
 		if _, ok := cfg.Hosts[flagHost]; ok {
 			return []string{flagHost}
 		}
+		available := cfg.AllHostNames()
+		fmt.Fprintf(os.Stderr, "host %q not found. Available hosts: %s\n", flagHost, strings.Join(available, ", "))
 		return nil
 	}
 	if flagTag != "" {

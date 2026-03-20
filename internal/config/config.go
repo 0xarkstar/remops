@@ -22,7 +22,7 @@ func Load() (*Config, error) {
 		}
 		return parse(data)
 	}
-	return nil, fmt.Errorf("config file not found; searched: %s", strings.Join(paths, ", "))
+	return nil, fmt.Errorf("config file not found; searched: %s\n\nRun 'remops init' to create a config file", strings.Join(paths, ", "))
 }
 
 // LoadFrom reads and parses a specific config file.

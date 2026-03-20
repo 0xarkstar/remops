@@ -74,7 +74,11 @@ func resolveService(name string) (config.Service, error) {
 	}
 	svc, ok := cfg.Services[name]
 	if !ok {
-		return config.Service{}, fmt.Errorf("service %q not found in config", name)
+		available := cfg.AllServiceNames()
+		if len(available) > 0 {
+			return config.Service{}, fmt.Errorf("service %q not found. Available services: %s", name, strings.Join(available, ", "))
+		}
+		return config.Service{}, fmt.Errorf("service %q not found. No services defined in config", name)
 	}
 	return svc, nil
 }

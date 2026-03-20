@@ -19,6 +19,21 @@ type hostResult struct {
 	Containers []docker.ContainerInfo `json:"containers"`
 }
 
+func (hr *hostResult) HostName() string { return hr.Host }
+
+func (hr *hostResult) ContainerRows() []output.ContainerRow {
+	rows := make([]output.ContainerRow, len(hr.Containers))
+	for i, c := range hr.Containers {
+		rows[i] = output.ContainerRow{
+			Name:   c.Name,
+			Image:  c.Image,
+			Status: c.Status,
+			State:  c.State,
+		}
+	}
+	return rows
+}
+
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show container status across hosts",
