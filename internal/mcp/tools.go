@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
+	"time"
+
+	"github.com/0xarkstar/remops/internal/config"
+	"github.com/0xarkstar/remops/internal/security"
 )
 
 // ToolDef describes a single MCP tool for the tools/list response.
@@ -18,7 +23,7 @@ type ToolDef struct {
 func mcpContent(text string) map[string]any {
 	return map[string]any{
 		"content": []map[string]any{
-			{"type": "text", "text": text},
+			{"type": "text", "text": security.SanitizeOutput(text)},
 		},
 	}
 }
@@ -44,11 +49,22 @@ func registerTools(s *Server) {
 				},
 			},
 			handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				if err := security.CheckPermission(s.profileLevel, config.LevelViewer); err != nil {
+					return nil, err
+				}
 				var p struct {
 					Host string `json:"host"`
 					Tag  string `json:"tag"`
 				}
-				_ = json.Unmarshal(raw, &p)
+				if err := json.Unmarshal(raw, &p); err != nil {
+					return nil, fmt.Errorf("invalid parameters: %w", err)
+				}
+
+				if p.Host != "" {
+					if err := security.ValidateHostName(p.Host); err != nil {
+						return nil, err
+					}
+				}
 
 				hosts := resolveHosts(s, p.Host, p.Tag)
 				if len(hosts) == 0 {
@@ -82,6 +98,9 @@ func registerTools(s *Server) {
 				},
 			},
 			handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				if err := security.CheckPermission(s.profileLevel, config.LevelViewer); err != nil {
+					return nil, err
+				}
 				var p struct {
 					Service string `json:"service"`
 					Tail    int    `json:"tail"`
@@ -89,6 +108,14 @@ func registerTools(s *Server) {
 				}
 				if err := json.Unmarshal(raw, &p); err != nil || p.Service == "" {
 					return nil, fmt.Errorf("service is required")
+				}
+				if err := security.ValidateServiceName(p.Service); err != nil {
+					return nil, err
+				}
+				if p.Since != "" {
+					if err := security.DetectShellInjection(p.Since); err != nil {
+						return nil, fmt.Errorf("invalid since value: %w", err)
+					}
 				}
 
 				svc, ok := s.config.Services[p.Service]
@@ -179,11 +206,17 @@ func registerTools(s *Server) {
 				},
 			},
 			handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				if err := security.CheckPermission(s.profileLevel, config.LevelViewer); err != nil {
+					return nil, err
+				}
 				var p struct {
 					Host string `json:"host"`
 				}
 				if err := json.Unmarshal(raw, &p); err != nil || p.Host == "" {
 					return nil, fmt.Errorf("host is required")
+				}
+				if err := security.ValidateHostName(p.Host); err != nil {
+					return nil, err
 				}
 
 				var sb strings.Builder
@@ -208,6 +241,9 @@ func registerTools(s *Server) {
 				},
 			},
 			handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				if err := security.CheckPermission(s.profileLevel, config.LevelViewer); err != nil {
+					return nil, err
+				}
 				var sb strings.Builder
 				for name := range s.config.Hosts {
 					pr, err := s.transport.Ping(ctx, name)
@@ -255,12 +291,19 @@ func resolveHosts(s *Server, host, tag string) []string {
 
 // serviceLifecycle handles restart/stop/start for a named service.
 func serviceLifecycle(ctx context.Context, s *Server, raw json.RawMessage, action string) (any, error) {
+	if err := security.CheckPermission(s.profileLevel, config.LevelOperator); err != nil {
+		return nil, err
+	}
+
 	var p struct {
 		Service string `json:"service"`
 		Confirm bool   `json:"confirm"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil || p.Service == "" {
 		return nil, fmt.Errorf("service is required")
+	}
+	if err := security.ValidateServiceName(p.Service); err != nil {
+		return nil, err
 	}
 	if !p.Confirm {
 		return nil, fmt.Errorf("confirm must be true to %s service", action)
@@ -271,11 +314,48 @@ func serviceLifecycle(ctx context.Context, s *Server, raw json.RawMessage, actio
 		return nil, fmt.Errorf("unknown service: %s", p.Service)
 	}
 
+	if s.approver != nil {
+		approvalCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		desc := fmt.Sprintf("%s service %s on %s", action, p.Service, svc.Host)
+		approved, err := s.approver.RequestApproval(approvalCtx, desc)
+		if err != nil {
+			return nil, fmt.Errorf("approval request failed: %w", err)
+		}
+		if !approved {
+			return nil, fmt.Errorf("operation denied by approver")
+		}
+	}
+
+	if s.rateLimiter != nil {
+		if err := s.rateLimiter.Check(svc.Host); err != nil {
+			return nil, err
+		}
+	}
+
 	cmd := fmt.Sprintf("docker %s %s", action, svc.Container)
 	res, err := s.transport.Exec(ctx, svc.Host, cmd)
 	if err != nil {
 		return nil, err
 	}
+
+	if s.rateLimiter != nil {
+		if err := s.rateLimiter.Record(svc.Host, cmd); err != nil {
+			fmt.Fprintf(os.Stderr, "mcp: rate limiter record: %v\n", err)
+		}
+	}
+	if s.auditLogger != nil {
+		if err := s.auditLogger.Log(security.AuditEntry{
+			Command: action,
+			Host:    svc.Host,
+			Service: p.Service,
+			Profile: s.profileLevel.String(),
+			Result:  "success",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "mcp: audit log: %v\n", err)
+		}
+	}
+
 	text := fmt.Sprintf("%s %s: exit_code=%d\n%s", action, svc.Container, res.ExitCode, res.Stdout)
 	return mcpContent(text), nil
 }

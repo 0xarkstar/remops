@@ -102,6 +102,12 @@ func runServiceLogs(cmd *cobra.Command, args []string) error {
 		os.Exit(ExitPermissionDenied)
 	}
 
+	if flagServiceLogsSince != "" {
+		if err := security.DetectShellInjection(flagServiceLogsSince); err != nil {
+			return fmt.Errorf("invalid --since value: %w", err)
+		}
+	}
+
 	tr := transport.NewSSHTransport(cfg)
 	defer tr.Close()
 

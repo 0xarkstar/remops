@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/0xarkstar/remops/internal/config"
+	"github.com/0xarkstar/remops/internal/security"
 	"github.com/0xarkstar/remops/internal/transport"
 )
 
@@ -38,18 +39,56 @@ type ToolHandler func(ctx context.Context, params json.RawMessage) (any, error)
 
 // Server is the MCP stdio server.
 type Server struct {
-	config    *config.Config
-	transport transport.Transport
-	tools     map[string]ToolHandler
-	defs      []ToolDef
+	config       *config.Config
+	transport    transport.Transport
+	tools        map[string]ToolHandler
+	defs         []ToolDef
+	profileLevel config.PermissionLevel
+	approver     security.Approver
+	rateLimiter  *security.RateLimiter
+	auditLogger  *security.AuditLogger
+	version      string
+}
+
+// ServerOption is a functional option for Server.
+type ServerOption func(*Server)
+
+// WithProfile sets the permission level for the server.
+func WithProfile(level config.PermissionLevel) ServerOption {
+	return func(s *Server) { s.profileLevel = level }
+}
+
+// WithApprover sets the approver for write operations.
+func WithApprover(a security.Approver) ServerOption {
+	return func(s *Server) { s.approver = a }
+}
+
+// WithRateLimiter sets the rate limiter for write operations.
+func WithRateLimiter(rl *security.RateLimiter) ServerOption {
+	return func(s *Server) { s.rateLimiter = rl }
+}
+
+// WithAuditLogger sets the audit logger.
+func WithAuditLogger(al *security.AuditLogger) ServerOption {
+	return func(s *Server) { s.auditLogger = al }
+}
+
+// WithVersion sets the server version string.
+func WithVersion(v string) ServerOption {
+	return func(s *Server) { s.version = v }
 }
 
 // NewServer creates an MCP server backed by cfg and t, with all tools registered.
-func NewServer(cfg *config.Config, t transport.Transport) *Server {
+func NewServer(cfg *config.Config, t transport.Transport, opts ...ServerOption) *Server {
 	s := &Server{
-		config:    cfg,
-		transport: t,
-		tools:     make(map[string]ToolHandler),
+		config:       cfg,
+		transport:    t,
+		tools:        make(map[string]ToolHandler),
+		profileLevel: config.LevelAdmin,
+		version:      "0.1.0",
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 	registerTools(s)
 	return s
@@ -115,7 +154,7 @@ func (s *Server) dispatch(ctx context.Context, req *JSONRPCRequest) (any, *RPCEr
 			"protocolVersion": "2024-11-05",
 			"serverInfo": map[string]any{
 				"name":    "remops",
-				"version": "0.1.0",
+				"version": s.version,
 			},
 			"capabilities": map[string]any{
 				"tools": map[string]any{},

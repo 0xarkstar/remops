@@ -56,11 +56,26 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		wg.Add(1)
 		go func(host string) {
 			defer wg.Done()
-			res, err := gatherHostData(ctx, dc, host)
+
+			hostCfg, ok := cfg.Hosts[host]
+			var hostTimeout time.Duration
+			if ok {
+				hostTimeout = hostCfg.EffectiveTimeout()
+			} else {
+				hostTimeout = 10 * time.Second
+			}
+			hostCtx, cancel := context.WithTimeout(ctx, hostTimeout)
+			defer cancel()
+
+			res, err := gatherHostData(hostCtx, dc, host)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				results = append(results, collected{host: host, errCode: "exec_error", errMsg: err.Error()})
+				errCode := "exec_error"
+				if hostCtx.Err() == context.DeadlineExceeded {
+					errCode = "timeout"
+				}
+				results = append(results, collected{host: host, errCode: errCode, errMsg: err.Error()})
 			} else {
 				results = append(results, collected{result: res})
 			}

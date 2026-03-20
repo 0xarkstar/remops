@@ -7,6 +7,7 @@ import (
 
 	"github.com/0xarkstar/remops/internal/config"
 	"github.com/0xarkstar/remops/internal/mcp"
+	"github.com/0xarkstar/remops/internal/security"
 	"github.com/0xarkstar/remops/internal/transport"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +34,35 @@ All logging goes to stderr. Do not run interactively.`,
 		t := transport.NewSSHTransport(cfg)
 		defer t.Close()
 
-		server := mcp.NewServer(cfg, t)
+		opts := []mcp.ServerOption{
+			mcp.WithProfile(config.ParseLevel(flagProfile)),
+			mcp.WithVersion(buildVersion),
+		}
+
+		if cfg.Approval != nil && cfg.Approval.Method == "telegram" {
+			opts = append(opts, mcp.WithApprover(
+				security.NewTelegramApprover(cfg.Approval.BotToken, cfg.Approval.ChatID),
+			))
+		}
+
+		if cfg.Approval != nil && cfg.Approval.RateLimit != nil {
+			rl, err := security.NewRateLimiter(cfg.Approval.RateLimit.EffectiveMaxWrites())
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "remops mcp: rate limiter: %v\n", err)
+			} else {
+				opts = append(opts, mcp.WithRateLimiter(rl))
+			}
+		}
+
+		al, err := security.NewAuditLogger()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "remops mcp: audit logger: %v\n", err)
+		} else {
+			defer al.Close()
+			opts = append(opts, mcp.WithAuditLogger(al))
+		}
+
+		server := mcp.NewServer(cfg, t, opts...)
 		return server.Run(context.Background())
 	},
 }

@@ -79,8 +79,33 @@ func TestListContainersParseError(t *testing.T) {
 		},
 	}
 	client := NewDockerClient(mt)
-	_, err := client.ListContainers(context.Background(), "web1")
-	if err == nil {
-		t.Fatal("expected parse error, got nil")
+	containers, err := client.ListContainers(context.Background(), "web1")
+	if err != nil {
+		t.Fatalf("unexpected error for malformed line: %v", err)
+	}
+	if len(containers) != 0 {
+		t.Errorf("want 0 containers for all-bad input, got %d", len(containers))
+	}
+}
+
+func TestListContainers_PartialParsing(t *testing.T) {
+	mixed := `{"Names":"myapp","Image":"nginx:latest","Status":"Up 2 hours","State":"running","Health":"healthy","Ports":"80/tcp","CreatedAt":"2024-01-01 10:00:00 +0000 UTC"}
+not valid json at all
+`
+	mt := &mockTransport{
+		execFunc: func(_ context.Context, _, _ string) (transport.ExecResult, error) {
+			return transport.ExecResult{Stdout: mixed, ExitCode: 0}, nil
+		},
+	}
+	client := NewDockerClient(mt)
+	containers, err := client.ListContainers(context.Background(), "web1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(containers) != 1 {
+		t.Fatalf("want 1 container, got %d", len(containers))
+	}
+	if containers[0].Name != "myapp" {
+		t.Errorf("want myapp, got %s", containers[0].Name)
 	}
 }

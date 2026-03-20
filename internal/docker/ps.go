@@ -41,11 +41,14 @@ func (d *DockerClient) ListContainers(ctx context.Context, host string) ([]Conta
 	}
 
 	var containers []ContainerInfo
-	dec := json.NewDecoder(strings.NewReader(result.Stdout))
-	for dec.More() {
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
 		var entry dockerPSEntry
-		if err := dec.Decode(&entry); err != nil {
-			return nil, fmt.Errorf("parse docker ps on %s: %w", host, err)
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue // skip malformed lines, return partial results
 		}
 		containers = append(containers, ContainerInfo{
 			Host:    host,

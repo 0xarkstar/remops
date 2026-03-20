@@ -13,6 +13,7 @@ import (
 	"github.com/0xarkstar/remops/internal/config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // SSHTransport implements Transport over SSH with connection pooling.
@@ -156,69 +157,96 @@ func (s *SSHTransport) client(hostName string) (*ssh.Client, error) {
 	}
 
 	key := fmt.Sprintf("%s@%s:%d", host.EffectiveUser(), host.Address, host.EffectivePort())
-	return s.pool.Get(key, func() (*ssh.Client, error) {
+	return s.pool.Get(key, func() (*ssh.Client, *ssh.Client, error) {
 		return s.dial(hostName, host)
 	})
 }
 
 // dial establishes a new SSH connection to the host, with optional ProxyJump.
-func (s *SSHTransport) dial(hostName string, host config.Host) (*ssh.Client, error) {
+// Returns (client, hopClient, error); hopClient is non-nil for ProxyJump connections
+// and must be closed when client is closed.
+func (s *SSHTransport) dial(hostName string, host config.Host) (*ssh.Client, *ssh.Client, error) {
+	hkCallback, err := buildHostKeyCallback()
+	if err != nil {
+		return nil, nil, fmt.Errorf("ssh host key callback: %w", err)
+	}
+
 	authMethods, err := buildAuthMethods(host.Key)
 	if err != nil {
-		return nil, fmt.Errorf("ssh auth for %s: %w", hostName, err)
+		return nil, nil, fmt.Errorf("ssh auth for %s: %w", hostName, err)
 	}
 
 	clientCfg := &ssh.ClientConfig{
 		User:            host.EffectiveUser(),
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec — TODO: known-hosts support
+		HostKeyCallback: hkCallback,
 		Timeout:         host.EffectiveTimeout(),
 	}
 
 	addr := fmt.Sprintf("%s:%d", host.Address, host.EffectivePort())
 
 	if host.ProxyJump == "" {
-		return ssh.Dial("tcp", addr, clientCfg)
+		client, err := ssh.Dial("tcp", addr, clientCfg)
+		return client, nil, err
 	}
 
 	// ProxyJump: connect to the hop first, then tunnel through.
 	hop, ok := s.cfg.Hosts[host.ProxyJump]
 	if !ok {
-		return nil, fmt.Errorf("proxy_jump host %q not found", host.ProxyJump)
+		return nil, nil, fmt.Errorf("proxy_jump host %q not found", host.ProxyJump)
 	}
 
 	hopAuthMethods, err := buildAuthMethods(hop.Key)
 	if err != nil {
-		return nil, fmt.Errorf("ssh auth for proxy %s: %w", host.ProxyJump, err)
+		return nil, nil, fmt.Errorf("ssh auth for proxy %s: %w", host.ProxyJump, err)
 	}
 
 	hopCfg := &ssh.ClientConfig{
 		User:            hop.EffectiveUser(),
 		Auth:            hopAuthMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec
+		HostKeyCallback: hkCallback,
 		Timeout:         hop.EffectiveTimeout(),
 	}
 
 	hopAddr := fmt.Sprintf("%s:%d", hop.Address, hop.EffectivePort())
 	hopClient, err := ssh.Dial("tcp", hopAddr, hopCfg)
 	if err != nil {
-		return nil, fmt.Errorf("proxy_jump dial %s: %w", hopAddr, err)
+		return nil, nil, fmt.Errorf("proxy_jump dial %s: %w", hopAddr, err)
 	}
 
 	conn, err := hopClient.Dial("tcp", addr)
 	if err != nil {
 		hopClient.Close()
-		return nil, fmt.Errorf("proxy_jump tunnel to %s: %w", addr, err)
+		return nil, nil, fmt.Errorf("proxy_jump tunnel to %s: %w", addr, err)
 	}
 
 	ncc, chans, reqs, err := ssh.NewClientConn(conn, addr, clientCfg)
 	if err != nil {
 		conn.Close()
 		hopClient.Close()
-		return nil, fmt.Errorf("ssh handshake via proxy to %s: %w", addr, err)
+		return nil, nil, fmt.Errorf("ssh handshake via proxy to %s: %w", addr, err)
 	}
 
-	return ssh.NewClient(ncc, chans, reqs), nil
+	return ssh.NewClient(ncc, chans, reqs), hopClient, nil
+}
+
+// buildHostKeyCallback returns a host key callback based on the user's known_hosts file.
+// Set REMOPS_INSECURE=1 to skip verification (emits a warning).
+func buildHostKeyCallback() (ssh.HostKeyCallback, error) {
+	if os.Getenv("REMOPS_INSECURE") == "1" {
+		fmt.Fprintln(os.Stderr, "WARNING: SSH host key verification disabled (REMOPS_INSECURE=1)")
+		return ssh.InsecureIgnoreHostKey(), nil //nolint:gosec
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	knownHostsPath := filepath.Join(home, ".ssh", "known_hosts")
+	cb, err := knownhosts.New(knownHostsPath)
+	if err != nil {
+		return nil, fmt.Errorf("load known_hosts from %s: %w", knownHostsPath, err)
+	}
+	return cb, nil
 }
 
 // buildAuthMethods returns auth methods in priority order:

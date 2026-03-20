@@ -12,6 +12,7 @@ const poolTTL = 5 * time.Minute
 
 type poolEntry struct {
 	client   *ssh.Client
+	hop      *ssh.Client // non-nil for proxied (ProxyJump) connections
 	lastUsed time.Time
 }
 
@@ -29,8 +30,9 @@ func NewPool() *Pool {
 }
 
 // Get returns an existing live connection or creates one via dial.
+// The dial func returns (client, hop, error); hop is non-nil for ProxyJump connections.
 // On each call, stale entries (older than poolTTL) are evicted.
-func (p *Pool) Get(key string, dial func() (*ssh.Client, error)) (*ssh.Client, error) {
+func (p *Pool) Get(key string, dial func() (*ssh.Client, *ssh.Client, error)) (*ssh.Client, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -40,6 +42,9 @@ func (p *Pool) Get(key string, dial func() (*ssh.Client, error)) (*ssh.Client, e
 	for k, e := range p.entries {
 		if now.Sub(e.lastUsed) > poolTTL {
 			e.client.Close() //nolint:errcheck
+			if e.hop != nil {
+				e.hop.Close() //nolint:errcheck
+			}
 			delete(p.entries, k)
 		}
 	}
@@ -53,14 +58,17 @@ func (p *Pool) Get(key string, dial func() (*ssh.Client, error)) (*ssh.Client, e
 		}
 		// Connection is dead — remove and reconnect.
 		e.client.Close() //nolint:errcheck
+		if e.hop != nil {
+			e.hop.Close() //nolint:errcheck
+		}
 		delete(p.entries, key)
 	}
 
-	client, err := dial()
+	client, hop, err := dial()
 	if err != nil {
 		return nil, fmt.Errorf("pool dial %s: %w", key, err)
 	}
-	p.entries[key] = &poolEntry{client: client, lastUsed: now}
+	p.entries[key] = &poolEntry{client: client, hop: hop, lastUsed: now}
 	return client, nil
 }
 
@@ -73,6 +81,11 @@ func (p *Pool) Close() error {
 	for k, e := range p.entries {
 		if err := e.client.Close(); err != nil {
 			lastErr = err
+		}
+		if e.hop != nil {
+			if err := e.hop.Close(); err != nil {
+				lastErr = err
+			}
 		}
 		delete(p.entries, k)
 	}

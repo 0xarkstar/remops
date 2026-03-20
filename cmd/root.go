@@ -22,6 +22,20 @@ const (
 )
 
 var (
+	buildVersion = "dev"
+	buildCommit  = "none"
+	buildDate    = "unknown"
+)
+
+// SetVersionInfo sets the build version info from main.go ldflags.
+func SetVersionInfo(version, commit, date string) {
+	buildVersion = version
+	buildCommit = commit
+	buildDate = date
+	rootCmd.Version = version
+}
+
+var (
 	flagFormat   string
 	flagProfile  string
 	flagHost     string
