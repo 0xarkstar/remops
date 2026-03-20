@@ -57,9 +57,19 @@ func (h Host) EffectiveTimeout() time.Duration {
 
 // Service maps a logical name to a container on a host.
 type Service struct {
-	Host      string   `yaml:"host"`
-	Container string   `yaml:"container"`
-	Tags      []string `yaml:"tags,omitempty"`
+	Host      string    `yaml:"host"`
+	Container string    `yaml:"container"`
+	Tags      []string  `yaml:"tags,omitempty"`
+	DB        *DBConfig `yaml:"db,omitempty"`
+}
+
+// DBConfig defines database connection settings for a service.
+type DBConfig struct {
+	Engine   string `yaml:"engine"`             // "postgresql", "mysql"
+	User     string `yaml:"user"`
+	Password string `yaml:"password,omitempty"` // supports ${ENV_VAR}
+	Database string `yaml:"database"`
+	Port     int    `yaml:"port,omitempty"`
 }
 
 // Profile defines permission levels for CLI usage.

@@ -233,6 +233,89 @@ func registerTools(s *Server) {
 		},
 		{
 			def: ToolDef{
+				Name:        "remops_host_disk",
+				Description: "Show disk usage for a host using df.",
+				InputSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"host": map[string]any{"type": "string", "description": "Host name"},
+					},
+					"required": []string{"host"},
+				},
+			},
+			handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				if err := security.CheckPermission(s.profileLevel, config.LevelViewer); err != nil {
+					return nil, err
+				}
+				var p struct {
+					Host string `json:"host"`
+				}
+				if err := json.Unmarshal(raw, &p); err != nil || p.Host == "" {
+					return nil, fmt.Errorf("host is required")
+				}
+				if err := security.ValidateHostName(p.Host); err != nil {
+					return nil, err
+				}
+				res, err := s.transport.Exec(ctx, p.Host, "df -h --output=target,size,used,avail,pcent")
+				if err != nil {
+					return nil, fmt.Errorf("disk usage on %s: %w", p.Host, err)
+				}
+				return mcpContent(res.Stdout), nil
+			},
+		},
+		{
+			def: ToolDef{
+				Name:        "remops_host_exec",
+				Description: "Execute an arbitrary command on a host. Requires admin permission and confirm=true.",
+				InputSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"host":    map[string]any{"type": "string", "description": "Host name"},
+						"command": map[string]any{"type": "string", "description": "Command to execute"},
+						"confirm": map[string]any{"type": "boolean", "description": "Must be true to execute"},
+					},
+					"required": []string{"host", "command", "confirm"},
+				},
+			},
+			handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+				if err := security.CheckPermission(s.profileLevel, config.LevelAdmin); err != nil {
+					return nil, err
+				}
+				var p struct {
+					Host    string `json:"host"`
+					Command string `json:"command"`
+					Confirm bool   `json:"confirm"`
+				}
+				if err := json.Unmarshal(raw, &p); err != nil || p.Host == "" || p.Command == "" {
+					return nil, fmt.Errorf("host and command are required")
+				}
+				if err := security.ValidateHostName(p.Host); err != nil {
+					return nil, err
+				}
+				if !p.Confirm {
+					return nil, fmt.Errorf("confirm must be true to execute command")
+				}
+				if s.auditLogger != nil {
+					_ = s.auditLogger.Log(security.AuditEntry{
+						Command: p.Command,
+						Host:    p.Host,
+						Profile: s.profileLevel.String(),
+						Result:  "exec",
+					})
+				}
+				res, err := s.transport.Exec(ctx, p.Host, p.Command)
+				if err != nil {
+					return nil, fmt.Errorf("exec on %s: %w", p.Host, err)
+				}
+				text := res.Stdout
+				if res.Stderr != "" {
+					text += res.Stderr
+				}
+				return mcpContent(text), nil
+			},
+		},
+		{
+			def: ToolDef{
 				Name:        "remops_doctor",
 				Description: "Run health checks: ping all hosts and verify Docker is accessible.",
 				InputSchema: map[string]any{
@@ -265,11 +348,81 @@ func registerTools(s *Server) {
 		},
 	}
 
+	registrations = append(registrations, reg{
+		def: ToolDef{
+			Name:        "remops_db_query",
+			Description: "Run a SQL query on a service's database via docker exec.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"service": map[string]any{"type": "string", "description": "Service name"},
+					"query":   map[string]any{"type": "string", "description": "SQL query to execute"},
+				},
+				"required": []string{"service", "query"},
+			},
+		},
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+			if err := security.CheckPermission(s.profileLevel, config.LevelViewer); err != nil {
+				return nil, err
+			}
+			var p struct {
+				Service string `json:"service"`
+				Query   string `json:"query"`
+			}
+			if err := json.Unmarshal(raw, &p); err != nil || p.Service == "" {
+				return nil, fmt.Errorf("service is required")
+			}
+			if p.Query == "" {
+				return nil, fmt.Errorf("query is required")
+			}
+			if err := security.ValidateServiceName(p.Service); err != nil {
+				return nil, err
+			}
+
+			svc, ok := s.config.Services[p.Service]
+			if !ok {
+				return nil, fmt.Errorf("unknown service: %s", p.Service)
+			}
+			if svc.DB == nil {
+				return nil, fmt.Errorf("service %q has no db config", p.Service)
+			}
+
+			db := svc.DB
+			escaped := escapeSingleQuotes(p.Query)
+			var cmd string
+			switch db.Engine {
+			case "postgresql", "postgres":
+				cmd = fmt.Sprintf("docker exec %s psql -U %s -d %s -c '%s'",
+					svc.Container, db.User, db.Database, escaped)
+			case "mysql":
+				cmd = fmt.Sprintf("docker exec %s mysql -u %s -p%s %s -e '%s'",
+					svc.Container, db.User, db.Password, db.Database, escaped)
+			default:
+				return nil, fmt.Errorf("unsupported db engine %q", db.Engine)
+			}
+
+			res, err := s.transport.Exec(ctx, svc.Host, cmd)
+			if err != nil {
+				return nil, err
+			}
+			combined := res.Stdout
+			if res.Stderr != "" {
+				combined += res.Stderr
+			}
+			return mcpContent(combined), nil
+		},
+	})
+
 	s.defs = make([]ToolDef, 0, len(registrations))
 	for _, r := range registrations {
 		s.defs = append(s.defs, r.def)
 		s.tools[r.def.Name] = r.handler
 	}
+}
+
+// escapeSingleQuotes escapes single quotes for use inside single-quoted shell arguments.
+func escapeSingleQuotes(s string) string {
+	return strings.ReplaceAll(s, "'", "'\\''")
 }
 
 // resolveHosts returns the host names to target based on optional host/tag filters.

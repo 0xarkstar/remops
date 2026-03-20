@@ -7,6 +7,8 @@ import (
 
 	"github.com/0xarkstar/remops/internal/config"
 	"github.com/0xarkstar/remops/internal/output"
+	"github.com/0xarkstar/remops/internal/plugin"
+	"github.com/0xarkstar/remops/plugins/alerting"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +48,8 @@ var (
 	flagTimeout  string
 	flagDryRun   bool
 
-	cfg *config.Config
+	cfg            *config.Config
+	pluginRegistry = plugin.NewRegistry()
 )
 
 var rootCmd = &cobra.Command{
@@ -79,6 +82,11 @@ for safe AI agent integration.`,
 		if err != nil {
 			return fmt.Errorf("config error: %w", err)
 		}
+		if len(cfg.Plugins) > 0 {
+			if err := pluginRegistry.InitAll(cfg, cfg.Plugins); err != nil {
+				fmt.Fprintf(os.Stderr, "plugin init warning: %v\n", err)
+			}
+		}
 		return nil
 	},
 }
@@ -92,6 +100,14 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagSanitize, "sanitize", false, "Sanitize output (strip LLM directives)")
 	rootCmd.PersistentFlags().StringVar(&flagTimeout, "timeout", "", "Override per-host timeout")
 	rootCmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "Show what would happen without executing")
+
+	// Register built-in plugins and add their commands.
+	_ = pluginRegistry.Register(alerting.New())
+	for _, p := range pluginRegistry.All() {
+		for _, cmd := range p.Commands() {
+			rootCmd.AddCommand(cmd)
+		}
+	}
 
 	// Register dynamic completions after flags are defined.
 	registerCompletions()
