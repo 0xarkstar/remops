@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/0xarkstar/remops/internal/config"
+	sshconfig "github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -171,7 +172,7 @@ func (s *SSHTransport) dial(hostName string, host config.Host) (*ssh.Client, *ss
 		return nil, nil, fmt.Errorf("ssh host key callback: %w", err)
 	}
 
-	authMethods, err := buildAuthMethods(host.Key)
+	authMethods, err := buildAuthMethods(host.Key, host.Address)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ssh auth for %s: %w", hostName, err)
 	}
@@ -196,7 +197,7 @@ func (s *SSHTransport) dial(hostName string, host config.Host) (*ssh.Client, *ss
 		return nil, nil, fmt.Errorf("proxy_jump host %q not found", host.ProxyJump)
 	}
 
-	hopAuthMethods, err := buildAuthMethods(hop.Key)
+	hopAuthMethods, err := buildAuthMethods(hop.Key, hop.Address)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ssh auth for proxy %s: %w", host.ProxyJump, err)
 	}
@@ -250,8 +251,8 @@ func buildHostKeyCallback() (ssh.HostKeyCallback, error) {
 }
 
 // buildAuthMethods returns auth methods in priority order:
-// ssh-agent (via SSH_AUTH_SOCK) → explicit key file → default key files.
-func buildAuthMethods(keyFile string) ([]ssh.AuthMethod, error) {
+// ssh-agent (via SSH_AUTH_SOCK) → explicit key file → ~/.ssh/config IdentityFile → default key files.
+func buildAuthMethods(keyFile, host string) ([]ssh.AuthMethod, error) {
 	var methods []ssh.AuthMethod
 
 	// 1. ssh-agent
@@ -262,7 +263,7 @@ func buildAuthMethods(keyFile string) ([]ssh.AuthMethod, error) {
 		}
 	}
 
-	// 2. Explicit key from config
+	// 2. Explicit key from remops config
 	if keyFile != "" {
 		m, err := signerFromFile(keyFile)
 		if err != nil {
@@ -272,7 +273,14 @@ func buildAuthMethods(keyFile string) ([]ssh.AuthMethod, error) {
 		return methods, nil
 	}
 
-	// 3. Default key files
+	// 3. IdentityFile from ~/.ssh/config
+	for _, path := range sshConfigIdentityFiles(host) {
+		if m, err := signerFromFile(path); err == nil {
+			methods = append(methods, m)
+		}
+	}
+
+	// 4. Default key files
 	home, err := os.UserHomeDir()
 	if err == nil {
 		for _, name := range []string{"id_ed25519", "id_rsa"} {
@@ -287,6 +295,26 @@ func buildAuthMethods(keyFile string) ([]ssh.AuthMethod, error) {
 		return nil, fmt.Errorf("no SSH authentication methods available")
 	}
 	return methods, nil
+}
+
+// sshConfigIdentityFiles returns IdentityFile paths from ~/.ssh/config for the given host.
+// Paths with ~ are expanded to the user's home directory.
+func sshConfigIdentityFiles(host string) []string {
+	val, err := sshconfig.GetStrict(host, "IdentityFile")
+	if err != nil || val == "" {
+		return nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return []string{val}
+	}
+
+	// Expand ~ prefix
+	if len(val) >= 2 && val[:2] == "~/" {
+		val = filepath.Join(home, val[2:])
+	}
+	return []string{val}
 }
 
 // signerFromFile loads a private key from path and returns an AuthMethod.

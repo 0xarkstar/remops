@@ -101,7 +101,7 @@ func TestBuildAuthMethods_NoAgent(t *testing.T) {
 	}
 	generateEd25519KeyFile(t, sshDir)
 
-	methods, err := buildAuthMethods("")
+	methods, err := buildAuthMethods("", "")
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestBuildAuthMethods_ExplicitKey(t *testing.T) {
 	tmpDir := t.TempDir()
 	keyPath := generateEd25519KeyFile(t, tmpDir)
 
-	methods, err := buildAuthMethods(keyPath)
+	methods, err := buildAuthMethods(keyPath, "")
 	if err != nil {
 		t.Fatalf("expected no error with explicit key, got: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestBuildAuthMethods_NoMethods(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 	// No .ssh directory or key files.
 
-	_, err := buildAuthMethods("")
+	_, err := buildAuthMethods("", "")
 	if err == nil {
 		t.Fatal("expected error when no auth methods available, got nil")
 	}
