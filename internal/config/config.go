@@ -111,6 +111,10 @@ func validate(cfg *Config) error {
 		}
 	}
 
+	if cfg.API != nil && cfg.API.APIKey == "" {
+		return fmt.Errorf("api: api_key is required when api section is configured")
+	}
+
 	for name, svc := range cfg.Services {
 		if svc.DB != nil {
 			switch svc.DB.Engine {

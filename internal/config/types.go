@@ -11,6 +11,7 @@ type Config struct {
 	Presets  map[string]string  `yaml:"presets,omitempty"`
 	Plugins  []string           `yaml:"plugins,omitempty"`
 	Approval *ApprovalConfig    `yaml:"approval,omitempty"`
+	API      *APIConfig         `yaml:"api,omitempty"`
 }
 
 // Host defines a remote host connection.
@@ -135,6 +136,20 @@ func (a ApprovalConfig) EffectiveTimeout() time.Duration {
 		return 5 * time.Minute
 	}
 	return d
+}
+
+// APIConfig defines HTTP API server settings.
+type APIConfig struct {
+	Listen string `yaml:"listen"`
+	APIKey string `yaml:"api_key"`
+}
+
+// EffectiveListen returns the listen address, defaulting to ":9090".
+func (a APIConfig) EffectiveListen() string {
+	if a.Listen == "" {
+		return ":9090"
+	}
+	return a.Listen
 }
 
 // RateLimitConfig defines write rate limiting.
