@@ -8,7 +8,6 @@ linters:
     - unused
     - ineffassign
     - gosimple
-    - typecheck
 
 linters-settings:
   errcheck:
