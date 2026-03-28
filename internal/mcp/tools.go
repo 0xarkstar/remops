@@ -23,9 +23,11 @@ type ToolDef struct {
 
 // mcpContent wraps text in the MCP content envelope format.
 func mcpContent(text string) map[string]any {
+	text = security.TruncateOutput(text)
+	text = security.SanitizeOutput(text)
 	return map[string]any{
 		"content": []map[string]any{
-			{"type": "text", "text": security.SanitizeOutput(text)},
+			{"type": "text", "text": text},
 		},
 	}
 }
@@ -374,7 +376,9 @@ func registerTools(s *Server) {
 						fmt.Fprintf(os.Stderr, "mcp: audit log: %v\n", err)
 					}
 				}
-				res, err := s.transport.Exec(ctx, p.Host, p.Command)
+				execCtx, execCancel := context.WithTimeout(ctx, 30*time.Second)
+				defer execCancel()
+				res, err := s.transport.Exec(execCtx, p.Host, p.Command)
 				if err != nil {
 					return nil, fmt.Errorf("exec on %s: %w", p.Host, err)
 				}
@@ -416,7 +420,12 @@ func registerTools(s *Server) {
 					if err != nil {
 						fmt.Fprintf(&sb, "  docker: error: %v\n", err)
 					} else {
-						fmt.Fprintf(&sb, "  docker: v%s\n", strings.TrimSpace(res.Stdout))
+						dockerVer := strings.TrimSpace(res.Stdout)
+						composeRes, composeErr := s.transport.Exec(ctx, name, "docker compose version --short")
+						if composeErr == nil && composeRes.ExitCode == 0 {
+							dockerVer += ", Compose " + strings.TrimSpace(composeRes.Stdout)
+						}
+						fmt.Fprintf(&sb, "  docker: v%s\n", dockerVer)
 					}
 				}
 				return mcpContent(sb.String()), nil

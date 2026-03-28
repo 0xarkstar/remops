@@ -257,3 +257,64 @@ func TestRunDiscover_AllAlreadyKnown_Output(t *testing.T) {
 	}
 	_ = dc
 }
+
+// -- discoverStacks tests --
+
+func TestDiscoverStacks_FindsNewStacks(t *testing.T) {
+	findOutput := "/home/arkstar/monitoring/docker-compose.yml\n/home/arkstar/media/compose.yaml\n"
+
+	tr := &mockTransport{
+		execFunc: func(host, cmd string) (transport.ExecResult, error) {
+			if strings.Contains(cmd, "find /home") {
+				return transport.ExecResult{Stdout: findOutput, ExitCode: 0}, nil
+			}
+			return transport.ExecResult{ExitCode: 0}, nil
+		},
+	}
+
+	existingStacks := map[string]config.Stack{}
+
+	stacks := discoverStacks(context.Background(), tr, []string{"prod"}, existingStacks)
+
+	if len(stacks) != 2 {
+		t.Fatalf("expected 2 new stacks, got %d: %+v", len(stacks), stacks)
+	}
+
+	names := make(map[string]string) // name -> path
+	for _, s := range stacks {
+		names[s.Name] = s.Path
+		if s.Host != "prod" {
+			t.Errorf("stack %q: Host = %q, want %q", s.Name, s.Host, "prod")
+		}
+	}
+
+	if names["monitoring"] != "/home/arkstar/monitoring" {
+		t.Errorf("monitoring path = %q, want %q", names["monitoring"], "/home/arkstar/monitoring")
+	}
+	if names["media"] != "/home/arkstar/media" {
+		t.Errorf("media path = %q, want %q", names["media"], "/home/arkstar/media")
+	}
+}
+
+func TestDiscoverStacks_AllKnown(t *testing.T) {
+	findOutput := "/home/arkstar/backups/docker-compose.yml\n"
+
+	tr := &mockTransport{
+		execFunc: func(host, cmd string) (transport.ExecResult, error) {
+			if strings.Contains(cmd, "find /home") {
+				return transport.ExecResult{Stdout: findOutput, ExitCode: 0}, nil
+			}
+			return transport.ExecResult{ExitCode: 0}, nil
+		},
+	}
+
+	existingStacks := map[string]config.Stack{
+		"backups": {Host: "prod", Path: "/home/arkstar/backups"},
+	}
+
+	stacks := discoverStacks(context.Background(), tr, []string{"prod"}, existingStacks)
+
+	if len(stacks) != 0 {
+		t.Errorf("expected 0 new stacks (all known), got %d: %+v", len(stacks), stacks)
+	}
+}

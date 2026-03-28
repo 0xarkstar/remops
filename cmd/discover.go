@@ -28,6 +28,13 @@ type discoveredContainer struct {
 	ServiceID string `json:"service_id"` // sanitized name for config key
 }
 
+// discoveredStack holds a Docker Compose project found on a host that is not yet in config.
+type discoveredStack struct {
+	Host string `json:"host"`
+	Path string `json:"path"`
+	Name string `json:"name"` // derived from directory name
+}
+
 // discoverHostResult holds scan results for a single host.
 type discoverHostResult struct {
 	HostName  string
@@ -46,8 +53,11 @@ Use --host or --tag to limit which hosts to scan.`,
 	RunE: runDiscover,
 }
 
+var flagDiscoverStacks bool
+
 func init() {
 	rootCmd.AddCommand(discoverCmd)
+	discoverCmd.Flags().BoolVar(&flagDiscoverStacks, "stacks", false, "Also discover Docker Compose projects")
 }
 
 func runDiscover(cmd *cobra.Command, args []string) error {
@@ -99,7 +109,18 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(cmd.OutOrStdout())
 	}
 
-	if len(allNew) == 0 {
+	// Discover Docker Compose stacks if requested.
+	var allNewStacks []discoveredStack
+	if flagDiscoverStacks {
+		existingStacks := cfg.Stacks
+		if existingStacks == nil {
+			existingStacks = map[string]config.Stack{}
+		}
+		allNewStacks = discoverStacks(cmd.Context(), tr, hosts, existingStacks)
+		printStackDiscovery(cmd.OutOrStdout(), allNewStacks, existingStacks, hosts)
+	}
+
+	if len(allNew) == 0 && len(allNewStacks) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "All services are already up to date.")
 		return nil
 	}
@@ -108,22 +129,42 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(allNew)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Found %d new container(s). Add to config? [Y/n]: ", len(allNew))
-	scanner := bufio.NewScanner(os.Stdin)
-	if !scanner.Scan() {
-		return fmt.Errorf("failed to read input: %w", scanner.Err())
-	}
-	answer := strings.TrimSpace(scanner.Text())
-	if answer != "" && !strings.EqualFold(answer, "y") {
-		fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
-		return nil
+	if len(allNew) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "Found %d new container(s). Add to config? [Y/n]: ", len(allNew))
+		scanner := bufio.NewScanner(os.Stdin)
+		if !scanner.Scan() {
+			return fmt.Errorf("failed to read input: %w", scanner.Err())
+		}
+		answer := strings.TrimSpace(scanner.Text())
+		if answer != "" && !strings.EqualFold(answer, "y") {
+			fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
+			return nil
+		}
+
+		if err := appendServicesToConfig(allNew); err != nil {
+			return fmt.Errorf("failed to update config: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Added %d service(s) to config.\n", len(allNew))
 	}
 
-	if err := appendServicesToConfig(allNew); err != nil {
-		return fmt.Errorf("failed to update config: %w", err)
+	if len(allNewStacks) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "Found %d new stack(s). Add to config? [Y/n]: ", len(allNewStacks))
+		scanner := bufio.NewScanner(os.Stdin)
+		if !scanner.Scan() {
+			return fmt.Errorf("failed to read input: %w", scanner.Err())
+		}
+		answer := strings.TrimSpace(scanner.Text())
+		if answer != "" && !strings.EqualFold(answer, "y") {
+			fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
+			return nil
+		}
+
+		if err := appendStacksToConfig(allNewStacks); err != nil {
+			return fmt.Errorf("failed to update config: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Added %d stack(s) to config.\n", len(allNewStacks))
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Added %d service(s) to config.\n", len(allNew))
 	return nil
 }
 
@@ -262,4 +303,147 @@ func uniqueServiceKey(services map[string]interface{}, base string) string {
 			return candidate
 		}
 	}
+}
+
+// findCmd is the shell command used to locate Docker Compose files on a host.
+const findComposeCmd = `find /home -name "docker-compose.yml" -o -name "docker-compose.yaml" -o -name "compose.yml" -o -name "compose.yaml" 2>/dev/null`
+
+// discoverStacks queries each host for Docker Compose projects not yet in config.
+func discoverStacks(ctx context.Context, tr transport.Transport, hosts []string, existingStacks map[string]config.Stack) []discoveredStack {
+	var results []discoveredStack
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, h := range hosts {
+		wg.Add(1)
+		go func(hostName string) {
+			defer wg.Done()
+
+			res, err := tr.Exec(ctx, hostName, findComposeCmd)
+			if err != nil || res.ExitCode != 0 {
+				return
+			}
+
+			for _, line := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				// Extract the directory containing the compose file.
+				idx := strings.LastIndex(line, "/")
+				if idx < 0 {
+					continue
+				}
+				dir := line[:idx]
+				if dir == "" {
+					dir = "/"
+				}
+				nameIdx := strings.LastIndex(dir, "/")
+				rawName := dir[nameIdx+1:]
+				name := sanitizeName(rawName)
+				if name == "" {
+					continue
+				}
+
+				// Check if this host+path is already in config.
+				known := false
+				for _, s := range existingStacks {
+					if s.Host == hostName && s.Path == dir {
+						known = true
+						break
+					}
+				}
+				if known {
+					continue
+				}
+
+				mu.Lock()
+				results = append(results, discoveredStack{Host: hostName, Path: dir, Name: name})
+				mu.Unlock()
+			}
+		}(h)
+	}
+
+	wg.Wait()
+	return results
+}
+
+// printStackDiscovery writes the per-host stacks discovery report to w.
+func printStackDiscovery(w interface{ Write([]byte) (int, error) }, stacks []discoveredStack, existingStacks map[string]config.Stack, hosts []string) {
+	// Group new stacks by host.
+	byHost := make(map[string][]discoveredStack)
+	for _, s := range stacks {
+		byHost[s.Host] = append(byHost[s.Host], s)
+	}
+
+	for _, h := range hosts {
+		hostStacks, hasNew := byHost[h]
+		// Collect known stacks for this host.
+		var known []config.Stack
+		for _, s := range existingStacks {
+			if s.Host == h {
+				known = append(known, s)
+			}
+		}
+		if !hasNew && len(known) == 0 {
+			continue
+		}
+		fmt.Fprintf(w, "Compose stacks on %s:\n", h)
+		for _, s := range hostStacks {
+			fmt.Fprintf(w, "  + %-20s (%s)\n", s.Name, s.Path)
+		}
+		for _, s := range known {
+			fmt.Fprintf(w, "  \u2713 %-20s (already in config)\n", s.Path)
+		}
+	}
+}
+
+// appendStacksToConfig reads the existing config file, merges new stacks, and writes it back.
+func appendStacksToConfig(stacks []discoveredStack) error {
+	paths := config.DefaultConfigPaths()
+	var configPath string
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			configPath = p
+			break
+		}
+	}
+	if configPath == "" {
+		return fmt.Errorf("config file not found; cannot write back")
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("cannot read config %s: %w", configPath, err)
+	}
+
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("cannot parse config: %w", err)
+	}
+
+	stacksMap, ok := raw["stacks"].(map[string]interface{})
+	if !ok || stacksMap == nil {
+		stacksMap = make(map[string]interface{})
+	}
+
+	for _, s := range stacks {
+		key := uniqueServiceKey(stacksMap, s.Name)
+		stacksMap[key] = map[string]interface{}{
+			"host": s.Host,
+			"path": s.Path,
+		}
+	}
+	raw["stacks"] = stacksMap
+
+	out, err := yaml.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("cannot marshal updated config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, out, 0o600); err != nil {
+		return fmt.Errorf("cannot write config %s: %w", configPath, err)
+	}
+
+	return nil
 }

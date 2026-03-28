@@ -55,7 +55,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			results = append(results, hostStatus{Host: h, Error: err.Error()})
 			continue
 		}
-		results = append(results, hostStatus{Host: h, Output: security.SanitizeOutput(res.Stdout)})
+		results = append(results, hostStatus{Host: h, Output: security.SanitizeOutput(security.TruncateOutput(res.Stdout))})
 	}
 
 	jsonResponse(w, http.StatusOK, map[string]any{"hosts": results})
@@ -108,7 +108,7 @@ func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request) {
 	if res.Stderr != "" {
 		combined += res.Stderr
 	}
-	jsonResponse(w, http.StatusOK, map[string]string{"logs": security.SanitizeOutput(combined)})
+	jsonResponse(w, http.StatusOK, map[string]string{"logs": security.SanitizeOutput(security.TruncateOutput(combined))})
 }
 
 // handleServiceAction returns a handler for restart/stop/start operations.
@@ -206,7 +206,7 @@ func (s *Server) handleServiceAction(action string) http.HandlerFunc {
 			"container": svc.Container,
 			"host":      svc.Host,
 			"exit_code": res.ExitCode,
-			"output":    security.SanitizeOutput(res.Stdout),
+			"output":    security.SanitizeOutput(security.TruncateOutput(res.Stdout)),
 		})
 	}
 }
@@ -235,7 +235,7 @@ func (s *Server) handleHostInfo(w http.ResponseWriter, r *http.Request) {
 			results = append(results, map[string]string{"command": cmd, "error": err.Error()})
 			continue
 		}
-		results = append(results, map[string]string{"command": cmd, "output": security.SanitizeOutput(res.Stdout)})
+		results = append(results, map[string]string{"command": cmd, "output": security.SanitizeOutput(security.TruncateOutput(res.Stdout))})
 	}
 	jsonResponse(w, http.StatusOK, map[string]any{"host": name, "info": results})
 }
@@ -262,7 +262,7 @@ func (s *Server) handleHostDisk(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonResponse(w, http.StatusOK, map[string]string{"host": name, "disk": security.SanitizeOutput(res.Stdout)})
+	jsonResponse(w, http.StatusOK, map[string]string{"host": name, "disk": security.SanitizeOutput(security.TruncateOutput(res.Stdout))})
 }
 
 func (s *Server) handleHostExec(w http.ResponseWriter, r *http.Request) {
@@ -336,7 +336,9 @@ func (s *Server) handleHostExec(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res, err := s.transport.Exec(r.Context(), name, body.Command)
+	execCtx, execCancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer execCancel()
+	res, err := s.transport.Exec(execCtx, name, body.Command)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -349,7 +351,7 @@ func (s *Server) handleHostExec(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, map[string]any{
 		"host":      name,
 		"exit_code": res.ExitCode,
-		"output":    security.SanitizeOutput(text),
+		"output":    security.SanitizeOutput(security.TruncateOutput(text)),
 	})
 }
 
@@ -454,7 +456,7 @@ func (s *Server) handleDBQuery(w http.ResponseWriter, r *http.Request) {
 	if res.Stderr != "" {
 		combined += res.Stderr
 	}
-	jsonResponse(w, http.StatusOK, map[string]string{"result": security.SanitizeOutput(combined)})
+	jsonResponse(w, http.StatusOK, map[string]string{"result": security.SanitizeOutput(security.TruncateOutput(combined))})
 }
 
 func (s *Server) handleStackPS(w http.ResponseWriter, r *http.Request) {
@@ -477,7 +479,7 @@ func (s *Server) handleStackPS(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonResponse(w, http.StatusOK, map[string]string{"stack": name, "ps": security.SanitizeOutput(out)})
+	jsonResponse(w, http.StatusOK, map[string]string{"stack": name, "ps": security.SanitizeOutput(security.TruncateOutput(out))})
 }
 
 func (s *Server) handleStackLogs(w http.ResponseWriter, r *http.Request) {
@@ -515,7 +517,7 @@ func (s *Server) handleStackLogs(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonResponse(w, http.StatusOK, map[string]string{"stack": name, "logs": security.SanitizeOutput(out)})
+	jsonResponse(w, http.StatusOK, map[string]string{"stack": name, "logs": security.SanitizeOutput(security.TruncateOutput(out))})
 }
 
 // handleStackAction returns a handler for operator-level compose actions (up -d, pull, restart).
@@ -588,7 +590,7 @@ func (s *Server) handleStackAction(action string) http.HandlerFunc {
 			"stack":     name,
 			"host":      stack.Host,
 			"exit_code": exitCode,
-			"output":    security.SanitizeOutput(out),
+			"output":    security.SanitizeOutput(security.TruncateOutput(out)),
 		})
 	}
 }
@@ -642,7 +644,7 @@ func (s *Server) handleStackDown(w http.ResponseWriter, r *http.Request) {
 		"stack":     name,
 		"host":      stack.Host,
 		"exit_code": exitCode,
-		"output":    security.SanitizeOutput(out),
+		"output":    security.SanitizeOutput(security.TruncateOutput(out)),
 	})
 }
 

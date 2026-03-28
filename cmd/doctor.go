@@ -57,6 +57,11 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		for name := range cfg.Hosts {
 			results = append(results, checkDockerInstalled(cmd, tr, name))
 		}
+
+		// d. Docker Compose installed on each host
+		for name := range cfg.Hosts {
+			results = append(results, checkDockerComposeInstalled(cmd, tr, name))
+		}
 	}
 
 	// d. SSH key permissions
@@ -132,6 +137,30 @@ func checkDockerInstalled(cmd *cobra.Command, tr transport.Transport, hostName s
 		Name:   fmt.Sprintf("Docker on %s", hostName),
 		Status: statusPass,
 		Detail: version,
+	}
+}
+
+func checkDockerComposeInstalled(cmd *cobra.Command, tr transport.Transport, hostName string) checkResult {
+	res, err := tr.Exec(cmd.Context(), hostName, "docker compose version --short")
+	if err != nil {
+		return checkResult{
+			Name:   fmt.Sprintf("Docker Compose on %s", hostName),
+			Status: statusWarn,
+			Detail: "not installed",
+		}
+	}
+	if res.ExitCode != 0 {
+		return checkResult{
+			Name:   fmt.Sprintf("Docker Compose on %s", hostName),
+			Status: statusWarn,
+			Detail: "not installed",
+		}
+	}
+	version := strings.TrimSpace(res.Stdout)
+	return checkResult{
+		Name:   fmt.Sprintf("Docker Compose on %s", hostName),
+		Status: statusPass,
+		Detail: "v" + version,
 	}
 }
 

@@ -305,6 +305,63 @@ func TestRunDoctor_NilConfig(t *testing.T) {
 	}
 }
 
+func TestCheckDockerComposeInstalled_Present(t *testing.T) {
+	tr := &mockTransport{
+		execResult: transport.ExecResult{Stdout: "2.24.0", ExitCode: 0},
+	}
+	cmd := newTestCmd()
+	result := checkDockerComposeInstalled(cmd, tr, "prod")
+	if result.Status != statusPass {
+		t.Errorf("got status %q, want PASS (detail: %s)", result.Status, result.Detail)
+	}
+	if result.Detail != "v2.24.0" {
+		t.Errorf("got detail %q, want %q", result.Detail, "v2.24.0")
+	}
+	if result.Name != "Docker Compose on prod" {
+		t.Errorf("got name %q, want %q", result.Name, "Docker Compose on prod")
+	}
+}
+
+func TestCheckDockerComposeInstalled_NotFound(t *testing.T) {
+	tr := &mockTransport{
+		execResult: transport.ExecResult{ExitCode: 1, Stderr: "unknown flag: --short"},
+	}
+	cmd := newTestCmd()
+	result := checkDockerComposeInstalled(cmd, tr, "prod")
+	if result.Status != statusWarn {
+		t.Errorf("got status %q, want WARN", result.Status)
+	}
+	if result.Detail != "not installed" {
+		t.Errorf("got detail %q, want %q", result.Detail, "not installed")
+	}
+}
+
+func TestCheckDockerComposeInstalled_ExecError(t *testing.T) {
+	tr := &mockTransport{execErr: errors.New("ssh timeout")}
+	cmd := newTestCmd()
+	result := checkDockerComposeInstalled(cmd, tr, "prod")
+	if result.Status != statusWarn {
+		t.Errorf("got status %q, want WARN", result.Status)
+	}
+	if result.Detail != "not installed" {
+		t.Errorf("got detail %q, want %q", result.Detail, "not installed")
+	}
+}
+
+func TestCheckDockerComposeInstalled_VersionTrimmed(t *testing.T) {
+	tr := &mockTransport{
+		execResult: transport.ExecResult{Stdout: "  2.24.0\n", ExitCode: 0},
+	}
+	cmd := newTestCmd()
+	result := checkDockerComposeInstalled(cmd, tr, "staging")
+	if result.Status != statusPass {
+		t.Errorf("got status %q, want PASS (detail: %s)", result.Status, result.Detail)
+	}
+	if result.Detail != "v2.24.0" {
+		t.Errorf("got detail %q, want %q", result.Detail, "v2.24.0")
+	}
+}
+
 func TestCheckResult_Fields(t *testing.T) {
 	r := checkResult{
 		Name:   "Test check",
