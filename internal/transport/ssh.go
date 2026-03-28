@@ -72,7 +72,7 @@ func (s *SSHTransport) Exec(ctx context.Context, hostName string, cmd string) (E
 	if err != nil {
 		if exitErr, ok := err.(*ssh.ExitError); ok {
 			exitCode = exitErr.ExitStatus()
-			err = nil
+			err = nil //nolint:ineffassign // non-zero exit is not an error
 		} else if ctx.Err() != nil {
 			return ExecResult{}, fmt.Errorf("exec cancelled on %s: %w", hostName, ctx.Err())
 		} else {

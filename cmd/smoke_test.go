@@ -7,22 +7,6 @@ import (
 	"testing"
 )
 
-// resetRootCmd resets cobra state between tests to avoid flag re-definition
-// and leftover args from previous test runs.
-func resetRootCmd(t *testing.T) {
-	t.Helper()
-	rootCmd.ResetFlags()
-	// Re-register persistent flags that init() would have set.
-	rootCmd.PersistentFlags().StringVarP(&flagFormat, "format", "f", "auto", "Output format: json, table, auto")
-	rootCmd.PersistentFlags().StringVarP(&flagProfile, "profile", "p", "admin", "Permission profile to use")
-	rootCmd.PersistentFlags().StringVar(&flagHost, "host", "", "Target host name")
-	rootCmd.PersistentFlags().StringVar(&flagTag, "tag", "", "Filter by tag")
-	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
-	rootCmd.PersistentFlags().BoolVar(&flagSanitize, "sanitize", false, "Sanitize output (strip LLM directives)")
-	rootCmd.PersistentFlags().StringVar(&flagTimeout, "timeout", "", "Override per-host timeout")
-	rootCmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "Show what would happen without executing")
-}
-
 // captureStdout replaces os.Stdout with a pipe and returns the captured output
 // after fn returns. Restores os.Stdout on cleanup.
 func captureStdout(t *testing.T, fn func()) string {

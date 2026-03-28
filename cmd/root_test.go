@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/0xarkstar/remops/internal/config"
-	"github.com/0xarkstar/remops/internal/output"
 )
 
 func TestResolveHosts_NilConfig(t *testing.T) {
@@ -131,8 +130,7 @@ func TestGetFormatter_ReturnsNonNil(t *testing.T) {
 			if f == nil {
 				t.Error("getFormatter() returned nil")
 			}
-			// verify it implements Formatter interface
-			var _ output.Formatter = f
+			_ = f
 		})
 	}
 }

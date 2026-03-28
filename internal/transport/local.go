@@ -37,7 +37,7 @@ func (l *LocalTransport) Exec(ctx context.Context, _ string, cmd string) (ExecRe
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
-			err = nil // non-zero exit is not an error at this layer
+			err = nil //nolint:ineffassign // non-zero exit is not an error at this layer
 		} else {
 			return ExecResult{}, fmt.Errorf("exec: %w", err)
 		}
