@@ -73,7 +73,7 @@ Getting started:
 	},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Skip config loading for help, completion, version, and root
-		if cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Name() == "remops" {
+		if cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Name() == "version" || cmd.Name() == "remops" {
 			return nil
 		}
 
