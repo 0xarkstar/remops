@@ -54,35 +54,50 @@ You don't need to remember which server. You don't need to remember docker comma
 ### 1. Install
 
 ```bash
+# Homebrew (macOS/Linux)
+brew install 0xarkstar/tap/remops
+
+# Or from source
 go install github.com/0xarkstar/remops@latest
 ```
+
+Pre-built binaries are available on the [releases page](https://github.com/0xarkstar/remops/releases).
 
 ### 2. Initialize
 
 ```bash
+# Create config (imports hosts from ~/.ssh/config)
 remops init
+
+# Auto-configure Claude Code MCP integration
+remops init --mcp
 ```
 
-This creates `~/.config/remops/remops.yaml` interactively. If you have `~/.ssh/config`, remops reads it for host defaults.
-
-### 3. Verify
+### 3. Discover containers
 
 ```bash
+remops discover
+```
+
+```
+Scanning hosts...
+
+prod (100.91.194.29):
+  + crawl4ai          (running, 5 weeks)    unclecode/crawl4ai:latest
+  + searxng           (running, 5 weeks)    searxng/searxng:latest
+  + beszel            (running, 2 weeks)    henrygd/beszel:latest
+  + uptime-kuma       (running, 2 weeks)    louislam/uptime-kuma:1
+
+Found 4 new containers. Add to config? [Y/n]: y
+Added 4 services to config.
+```
+
+### 4. Verify and use
+
+```bash
+# Check connectivity
 remops doctor
-```
 
-```
-Check                                      Status Detail
---------------------------------------------------------------------------------
-Config file                                PASS   found and valid
-Host prod reachable                        PASS   latency 13ms
-Docker on prod                             PASS   Docker version 28.5.2
-SSH key permissions                        PASS   key files have safe permissions
-```
-
-### 4. Use
-
-```bash
 # See all containers across all servers
 remops status
 
@@ -108,7 +123,12 @@ remops host disk prod
 
 ### MCP — for Claude Code
 
-Add to your `~/.claude.json`:
+```bash
+# Auto-configure (recommended)
+remops mcp setup
+
+# Or add manually to ~/.claude.json:
+```
 
 ```json
 {
