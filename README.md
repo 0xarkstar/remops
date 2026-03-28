@@ -54,19 +54,17 @@ You don't need to remember which server. You don't need to remember docker comma
 ### 1. Install
 
 ```bash
-# Homebrew (macOS/Linux)
-brew install 0xarkstar/tap/remops
-
-# Or from source
+# From source (Go 1.23+)
 go install github.com/0xarkstar/remops@latest
-```
 
-Pre-built binaries are available on the [releases page](https://github.com/0xarkstar/remops/releases).
+# Or download a binary from the releases page:
+# https://github.com/0xarkstar/remops/releases
+```
 
 ### 2. Initialize
 
 ```bash
-# Create config (imports hosts from ~/.ssh/config)
+# Create config interactively
 remops init
 
 # Auto-configure Claude Code MCP integration
@@ -160,7 +158,7 @@ You: "Restart crawl4ai"
 Claude: [calls remops_service_restart] → Telegram approval → restarted
 ```
 
-**10 MCP tools:** `remops_status`, `remops_service_logs`, `remops_service_restart`, `remops_service_stop`, `remops_service_start`, `remops_host_info`, `remops_host_disk`, `remops_host_exec`, `remops_doctor`, `remops_db_query`
+**16 MCP tools:** `remops_status`, `remops_service_logs`, `remops_service_restart`, `remops_service_stop`, `remops_service_start`, `remops_host_info`, `remops_host_disk`, `remops_host_exec`, `remops_doctor`, `remops_db_query`, `remops_stack_ps`, `remops_stack_logs`, `remops_stack_up`, `remops_stack_pull`, `remops_stack_restart`, `remops_stack_down`
 
 ### HTTP API — for any AI agent
 

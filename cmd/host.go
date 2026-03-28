@@ -20,38 +20,42 @@ var hostCmd = &cobra.Command{
 }
 
 var hostInfoCmd = &cobra.Command{
-	Use:         "info <name>",
-	Short:       "Show system info and containers for a host",
-	Annotations: map[string]string{"permission": "viewer"},
-	Args:        cobra.ExactArgs(1),
-	RunE:        runHostInfo,
+	Use:               "info <name>",
+	Short:             "Show system info and containers for a host",
+	Annotations:       map[string]string{"permission": "viewer"},
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeHostNames,
+	RunE:              runHostInfo,
 }
 
 func init() {
 	diskCmd := &cobra.Command{
-		Use:         "disk [name]",
-		Short:       "Show disk usage for host(s)",
-		Annotations: map[string]string{"permission": "viewer"},
-		Args:        cobra.MaximumNArgs(1),
-		RunE:        runHostDisk,
+		Use:               "disk [name]",
+		Short:             "Show disk usage for host(s)",
+		Annotations:       map[string]string{"permission": "viewer"},
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeHostNames,
+		RunE:              runHostDisk,
 	}
 
 	pruneCmd := &cobra.Command{
-		Use:         "prune <name>",
-		Short:       "Prune unused Docker data on a host",
-		Annotations: map[string]string{"permission": "operator"},
-		Args:        cobra.ExactArgs(1),
-		RunE:        runHostPrune,
+		Use:               "prune <name>",
+		Short:             "Prune unused Docker data on a host",
+		Annotations:       map[string]string{"permission": "operator"},
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeHostNames,
+		RunE:              runHostPrune,
 	}
 	pruneCmd.Flags().Bool("confirm", false, "Confirm execution")
 	pruneCmd.Flags().Bool("volumes", false, "Also prune unused volumes")
 
 	execCmd := &cobra.Command{
-		Use:         `exec <name> "<command>"`,
-		Short:       "Execute an arbitrary command on a host (admin only)",
-		Annotations: map[string]string{"permission": "admin"},
-		Args:        cobra.ExactArgs(2),
-		RunE:        runHostExec,
+		Use:               `exec <name> "<command>"`,
+		Short:             "Execute an arbitrary command on a host (admin only)",
+		Annotations:       map[string]string{"permission": "admin"},
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeHostNames,
+		RunE:              runHostExec,
 	}
 	execCmd.Flags().Bool("confirm", false, "Confirm execution")
 

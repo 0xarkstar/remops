@@ -20,18 +20,20 @@ var stackCmd = &cobra.Command{
 func init() {
 	// stack ps
 	psCmd := &cobra.Command{
-		Use:   "ps <name>",
-		Short: "Show status of a compose stack",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runStackPS,
+		Use:               "ps <name>",
+		Short:             "Show status of a compose stack",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeStackNames,
+		RunE:              runStackPS,
 	}
 
 	// stack logs
 	logsCmd := &cobra.Command{
-		Use:   "logs <name>",
-		Short: "Show logs for a compose stack",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runStackLogs,
+		Use:               "logs <name>",
+		Short:             "Show logs for a compose stack",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeStackNames,
+		RunE:              runStackLogs,
 	}
 	logsCmd.Flags().IntVar(&flagServiceLogsTail, "tail", 100, "Number of log lines")
 	logsCmd.Flags().StringVar(&flagServiceLogsSince, "since", "", "Since duration")
@@ -39,37 +41,41 @@ func init() {
 
 	// stack up
 	upCmd := &cobra.Command{
-		Use:   "up <name>",
-		Short: "Start or update a compose stack",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runStackWrite("up -d"),
+		Use:               "up <name>",
+		Short:             "Start or update a compose stack",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeStackNames,
+		RunE:              runStackWrite("up -d"),
 	}
 	upCmd.Flags().Bool("confirm", false, "Confirm execution")
 
 	// stack pull
 	pullCmd := &cobra.Command{
-		Use:   "pull <name>",
-		Short: "Pull new images for a compose stack",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runStackWrite("pull"),
+		Use:               "pull <name>",
+		Short:             "Pull new images for a compose stack",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeStackNames,
+		RunE:              runStackWrite("pull"),
 	}
 	pullCmd.Flags().Bool("confirm", false, "Confirm execution")
 
 	// stack restart
 	restartCmd := &cobra.Command{
-		Use:   "restart <name>",
-		Short: "Restart a compose stack",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runStackWrite("restart"),
+		Use:               "restart <name>",
+		Short:             "Restart a compose stack",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeStackNames,
+		RunE:              runStackWrite("restart"),
 	}
 	restartCmd.Flags().Bool("confirm", false, "Confirm execution")
 
 	// stack down (admin only)
 	downCmd := &cobra.Command{
-		Use:   "down <name>",
-		Short: "Stop and remove a compose stack (admin only)",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runStackDown,
+		Use:               "down <name>",
+		Short:             "Stop and remove a compose stack (admin only)",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeStackNames,
+		RunE:              runStackDown,
 	}
 	downCmd.Flags().Bool("confirm", false, "Confirm execution")
 

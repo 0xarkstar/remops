@@ -133,6 +133,21 @@ func completeServiceNames(_ *cobra.Command, _ []string, toComplete string) ([]st
 	return names, cobra.ShellCompDirectiveNoFileComp
 }
 
+// completeStackNames is a reusable completion function for stack name args.
+func completeStackNames(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	cfg := loadConfigSilent()
+	if cfg == nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var names []string
+	for _, n := range cfg.AllStackNames() {
+		if strings.HasPrefix(n, toComplete) {
+			names = append(names, n)
+		}
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
 // completeSinceDurations suggests common duration values for --since flags.
 func completeSinceDurations(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	suggestions := []string{"1m", "5m", "15m", "1h", "6h", "24h", "7d"}

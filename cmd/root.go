@@ -8,7 +8,6 @@ import (
 	"github.com/0xarkstar/remops/internal/config"
 	"github.com/0xarkstar/remops/internal/output"
 	"github.com/0xarkstar/remops/internal/plugin"
-	"github.com/0xarkstar/remops/plugins/alerting"
 	"github.com/spf13/cobra"
 )
 
@@ -62,7 +61,7 @@ hosts via SSH. It provides three interfaces (CLI, MCP, HTTP API) sharing
 one security pipeline with permission levels and Telegram approval.
 
 Getting started:
-  remops init              Create config (imports from ~/.ssh/config)
+  remops init              Create config interactively
   remops init --mcp        Configure Claude Code MCP integration
   remops discover          Find containers on your hosts
   remops doctor            Verify connectivity
@@ -107,25 +106,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagSanitize, "sanitize", false, "Sanitize output (strip LLM directives)")
 	rootCmd.PersistentFlags().StringVar(&flagTimeout, "timeout", "", "Override per-host timeout")
 	rootCmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "Show what would happen without executing")
-
-	// Register built-in plugins and add their commands.
-	if err := pluginRegistry.Register(alerting.New()); err != nil {
-		fmt.Fprintf(os.Stderr, "plugin registration error: %v\n", err)
-	}
-	existingCmds := make(map[string]bool)
-	for _, c := range rootCmd.Commands() {
-		existingCmds[c.Name()] = true
-	}
-	for _, p := range pluginRegistry.All() {
-		for _, cmd := range p.Commands() {
-			if existingCmds[cmd.Name()] {
-				fmt.Fprintf(os.Stderr, "plugin command %q conflicts with existing command, skipping\n", cmd.Name())
-				continue
-			}
-			rootCmd.AddCommand(cmd)
-			existingCmds[cmd.Name()] = true
-		}
-	}
 
 	// Register dynamic completions after flags are defined.
 	registerCompletions()

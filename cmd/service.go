@@ -26,40 +26,44 @@ var (
 
 func init() {
 	logsCmd := &cobra.Command{
-		Use:         "logs <name>",
-		Short:       "Fetch logs for a service",
-		Annotations: map[string]string{"permission": "viewer"},
-		Args:        cobra.ExactArgs(1),
-		RunE:        runServiceLogs,
+		Use:               "logs <name>",
+		Short:             "Fetch logs for a service",
+		Annotations:       map[string]string{"permission": "viewer"},
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeServiceNames,
+		RunE:              runServiceLogs,
 	}
 	logsCmd.Flags().IntVar(&flagServiceLogsTail, "tail", 100, "Number of log lines to show")
 	logsCmd.Flags().StringVar(&flagServiceLogsSince, "since", "", "Show logs since duration or timestamp (e.g. 1h, 2024-01-01T00:00:00)")
 	logsCmd.Flags().BoolVar(&flagServiceLogsFollow, "follow", false, "Follow log output")
 
 	restartCmd := &cobra.Command{
-		Use:         "restart <name>",
-		Short:       "Restart a service",
-		Annotations: map[string]string{"permission": "operator"},
-		Args:        cobra.ExactArgs(1),
-		RunE:        runServiceWrite("restart"),
+		Use:               "restart <name>",
+		Short:             "Restart a service",
+		Annotations:       map[string]string{"permission": "operator"},
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeServiceNames,
+		RunE:              runServiceWrite("restart"),
 	}
 	restartCmd.Flags().Bool("confirm", false, "Confirm execution (omit to see dry-run)")
 
 	stopCmd := &cobra.Command{
-		Use:         "stop <name>",
-		Short:       "Stop a service",
-		Annotations: map[string]string{"permission": "operator"},
-		Args:        cobra.ExactArgs(1),
-		RunE:        runServiceWrite("stop"),
+		Use:               "stop <name>",
+		Short:             "Stop a service",
+		Annotations:       map[string]string{"permission": "operator"},
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeServiceNames,
+		RunE:              runServiceWrite("stop"),
 	}
 	stopCmd.Flags().Bool("confirm", false, "Confirm execution (omit to see dry-run)")
 
 	startCmd := &cobra.Command{
-		Use:         "start <name>",
-		Short:       "Start a service",
-		Annotations: map[string]string{"permission": "operator"},
-		Args:        cobra.ExactArgs(1),
-		RunE:        runServiceWrite("start"),
+		Use:               "start <name>",
+		Short:             "Start a service",
+		Annotations:       map[string]string{"permission": "operator"},
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeServiceNames,
+		RunE:              runServiceWrite("start"),
 	}
 	startCmd.Flags().Bool("confirm", false, "Confirm execution (omit to see dry-run)")
 
@@ -90,6 +94,9 @@ func currentProfileLevel() config.PermissionLevel {
 	}
 	profile, ok := cfg.Profiles[flagProfile]
 	if !ok {
+		if flagProfile != "admin" {
+			fmt.Fprintf(os.Stderr, "warning: profile %q not found in config, defaulting to admin\n", flagProfile)
+		}
 		return config.LevelAdmin
 	}
 	return config.ParseLevel(profile.Level)
