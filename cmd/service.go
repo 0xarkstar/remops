@@ -102,7 +102,7 @@ func runServiceLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := security.CheckPermission(currentProfileLevel(), config.LevelViewer); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "%v\nHint: use --profile operator or --profile admin\n", err)
 		os.Exit(ExitPermissionDenied)
 	}
 
@@ -155,7 +155,7 @@ func runServiceWrite(action string) func(*cobra.Command, []string) error {
 		}
 
 		if err := security.CheckPermission(currentProfileLevel(), config.LevelOperator); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintf(os.Stderr, "%v\nHint: use --profile operator or --profile admin\n", err)
 			os.Exit(ExitPermissionDenied)
 		}
 

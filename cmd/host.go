@@ -62,7 +62,11 @@ func init() {
 func runHostInfo(cmd *cobra.Command, args []string) error {
 	hostName := args[0]
 	if _, ok := cfg.Hosts[hostName]; !ok {
-		return fmt.Errorf("unknown host %q", hostName)
+		available := cfg.AllHostNames()
+		if len(available) > 0 {
+			return fmt.Errorf("unknown host %q. Available hosts: %s", hostName, strings.Join(available, ", "))
+		}
+		return fmt.Errorf("unknown host %q. No hosts defined in config", hostName)
 	}
 
 	start := time.Now()
@@ -86,7 +90,7 @@ func runHostInfo(cmd *cobra.Command, args []string) error {
 
 func runHostDisk(cmd *cobra.Command, args []string) error {
 	if err := security.CheckPermission(currentProfileLevel(), config.LevelViewer); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "%v\nHint: use --profile operator or --profile admin\n", err)
 		os.Exit(ExitPermissionDenied)
 	}
 
@@ -94,7 +98,11 @@ func runHostDisk(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		name := args[0]
 		if _, ok := cfg.Hosts[name]; !ok {
-			return fmt.Errorf("unknown host %q", name)
+			available := cfg.AllHostNames()
+			if len(available) > 0 {
+				return fmt.Errorf("unknown host %q. Available hosts: %s", name, strings.Join(available, ", "))
+			}
+			return fmt.Errorf("unknown host %q. No hosts defined in config", name)
 		}
 		hosts = []string{name}
 	} else {
@@ -130,11 +138,15 @@ func runHostDisk(cmd *cobra.Command, args []string) error {
 func runHostPrune(cmd *cobra.Command, args []string) error {
 	hostName := args[0]
 	if _, ok := cfg.Hosts[hostName]; !ok {
-		return fmt.Errorf("unknown host %q", hostName)
+		available := cfg.AllHostNames()
+		if len(available) > 0 {
+			return fmt.Errorf("unknown host %q. Available hosts: %s", hostName, strings.Join(available, ", "))
+		}
+		return fmt.Errorf("unknown host %q. No hosts defined in config", hostName)
 	}
 
 	if err := security.CheckPermission(currentProfileLevel(), config.LevelOperator); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "%v\nHint: use --profile operator or --profile admin\n", err)
 		os.Exit(ExitPermissionDenied)
 	}
 
@@ -182,11 +194,15 @@ func runHostExec(cmd *cobra.Command, args []string) error {
 	command := args[1]
 
 	if _, ok := cfg.Hosts[hostName]; !ok {
-		return fmt.Errorf("unknown host %q", hostName)
+		available := cfg.AllHostNames()
+		if len(available) > 0 {
+			return fmt.Errorf("unknown host %q. Available hosts: %s", hostName, strings.Join(available, ", "))
+		}
+		return fmt.Errorf("unknown host %q. No hosts defined in config", hostName)
 	}
 
 	if err := security.CheckPermission(currentProfileLevel(), config.LevelAdmin); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "%v\nHint: use --profile admin\n", err)
 		os.Exit(ExitPermissionDenied)
 	}
 

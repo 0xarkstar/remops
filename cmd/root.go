@@ -57,9 +57,16 @@ var rootCmd = &cobra.Command{
 	Short: "Agent-first CLI for remote Docker operations",
 	Long: `remops — One CLI, all your servers. Built for AI agents. Designed for humans.
 
-remops manages Docker containers across multiple remote hosts via SSH.
-It provides structured output, permission levels, and out-of-band approval
-for safe AI agent integration.`,
+remops manages Docker containers and Compose stacks across multiple remote
+hosts via SSH. It provides three interfaces (CLI, MCP, HTTP API) sharing
+one security pipeline with permission levels and Telegram approval.
+
+Getting started:
+  remops init              Create config (imports from ~/.ssh/config)
+  remops init --mcp        Configure Claude Code MCP integration
+  remops discover          Find containers on your hosts
+  remops doctor            Verify connectivity
+  remops status            See all containers across all hosts`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -80,7 +87,7 @@ for safe AI agent integration.`,
 		var err error
 		cfg, err = config.Load()
 		if err != nil {
-			return fmt.Errorf("config error: %w", err)
+			return fmt.Errorf("config error: %w\n\nRun 'remops init' to create a config file", err)
 		}
 		if len(cfg.Plugins) > 0 {
 			if err := pluginRegistry.InitAll(cfg, cfg.Plugins); err != nil {

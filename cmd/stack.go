@@ -98,7 +98,7 @@ func runStackPS(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if err := security.CheckPermission(currentProfileLevel(), config.LevelViewer); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "%v\nHint: use --profile operator or --profile admin\n", err)
 		os.Exit(ExitPermissionDenied)
 	}
 
@@ -120,7 +120,7 @@ func runStackLogs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if err := security.CheckPermission(currentProfileLevel(), config.LevelViewer); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "%v\nHint: use --profile operator or --profile admin\n", err)
 		os.Exit(ExitPermissionDenied)
 	}
 	if flagServiceLogsSince != "" {
@@ -154,7 +154,7 @@ func runStackWrite(action string) func(*cobra.Command, []string) error {
 			return err
 		}
 		if err := security.CheckPermission(currentProfileLevel(), config.LevelOperator); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintf(os.Stderr, "%v\nHint: use --profile operator or --profile admin\n", err)
 			os.Exit(ExitPermissionDenied)
 		}
 
@@ -170,6 +170,8 @@ func runStackWrite(action string) func(*cobra.Command, []string) error {
 		tr := transport.NewSSHTransport(cfg)
 		defer tr.Close()
 		dc := docker.NewDockerClient(tr)
+
+		fmt.Fprintf(os.Stderr, "Running compose %s on %s...\n", action, stack.Host)
 
 		output, exitCode, err := dc.ComposeAction(cmd.Context(), stack.Host, stack.Path, action)
 		if err != nil {
@@ -193,7 +195,7 @@ func runStackDown(cmd *cobra.Command, args []string) error {
 	}
 	// down is destructive — requires admin
 	if err := security.CheckPermission(currentProfileLevel(), config.LevelAdmin); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "%v\nHint: use --profile admin\n", err)
 		os.Exit(ExitPermissionDenied)
 	}
 

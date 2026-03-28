@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -66,6 +67,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	var wg sync.WaitGroup
 
 	ctx := cmd.Context()
+
+	fmt.Fprintf(os.Stderr, "Checking %d host(s)...\n", len(hosts))
 
 	for _, h := range hosts {
 		wg.Add(1)
