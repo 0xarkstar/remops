@@ -115,10 +115,19 @@ remops service restart nginx --confirm
 ### CLI — for humans in terminal
 
 ```bash
+# Containers
 remops status
 remops service logs nginx --tail 100 --since 1h
 remops service restart nginx --confirm
 remops host disk prod
+
+# Docker Compose stacks
+remops stack ps monitoring
+remops stack logs monitoring --tail 50
+remops stack up monitoring --confirm
+remops stack pull monitoring --confirm
+remops stack restart monitoring --confirm
+remops stack down monitoring --confirm   # admin only
 ```
 
 ### MCP — for Claude Code
@@ -198,6 +207,12 @@ curl -H "Authorization: Bearer $KEY" http://localhost:9090/api/v1/doctor
 | GET | `/api/v1/doctor` | viewer | Health check |
 | POST | `/api/v1/db/:service/query` | viewer/operator | SQL query |
 | GET | `/api/v1/version` | viewer | Version info |
+| GET | `/api/v1/stacks/:name/ps` | viewer | Stack container status |
+| GET | `/api/v1/stacks/:name/logs` | viewer | Stack logs |
+| POST | `/api/v1/stacks/:name/up` | operator | Start/update stack |
+| POST | `/api/v1/stacks/:name/pull` | operator | Pull stack images |
+| POST | `/api/v1/stacks/:name/restart` | operator | Restart stack |
+| POST | `/api/v1/stacks/:name/down` | admin | Remove stack (destructive) |
 
 ---
 
@@ -271,6 +286,12 @@ services:
       engine: postgresql        # postgresql or mysql
       user: admin
       database: mydb
+
+stacks:                          # Optional — Docker Compose projects
+  monitoring:
+    host: prod
+    path: /home/deploy/monitoring
+    tags: [infra]
 
 profiles:
   viewer:

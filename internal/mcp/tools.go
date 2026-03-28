@@ -724,6 +724,9 @@ func resolveStack(s *Server, name string) (config.Stack, error) {
 	if !ok {
 		return config.Stack{}, fmt.Errorf("unknown stack: %s", name)
 	}
+	if err := security.ValidateRemotePath(stack.Path); err != nil {
+		return config.Stack{}, fmt.Errorf("stack %q: %w", name, err)
+	}
 	return stack, nil
 }
 

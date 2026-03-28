@@ -4,10 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/0xarkstar/remops/internal/security"
 )
 
 // ComposePS returns the output of `docker compose ps` in the given directory.
 func (d *DockerClient) ComposePS(ctx context.Context, host, dir string) (string, error) {
+	if err := security.ValidateRemotePath(dir); err != nil {
+		return "", fmt.Errorf("invalid compose path: %w", err)
+	}
 	cmd := fmt.Sprintf("cd %s && docker compose ps --format json", shellQuote(dir))
 	result, err := d.transport.Exec(ctx, host, cmd)
 	if err != nil {
@@ -21,6 +26,9 @@ func (d *DockerClient) ComposePS(ctx context.Context, host, dir string) (string,
 
 // ComposeAction runs a compose action (up -d, pull, down, restart) in the given directory.
 func (d *DockerClient) ComposeAction(ctx context.Context, host, dir, action string) (string, int, error) {
+	if err := security.ValidateRemotePath(dir); err != nil {
+		return "", -1, fmt.Errorf("invalid compose path: %w", err)
+	}
 	cmd := fmt.Sprintf("cd %s && docker compose %s", shellQuote(dir), action)
 	result, err := d.transport.Exec(ctx, host, cmd)
 	if err != nil {
@@ -35,6 +43,9 @@ func (d *DockerClient) ComposeAction(ctx context.Context, host, dir, action stri
 
 // ComposeLogs returns logs for a compose stack, optionally filtered by service.
 func (d *DockerClient) ComposeLogs(ctx context.Context, host, dir string, tail int, since, serviceName string) (string, error) {
+	if err := security.ValidateRemotePath(dir); err != nil {
+		return "", fmt.Errorf("invalid compose path: %w", err)
+	}
 	cmd := fmt.Sprintf("cd %s && docker compose logs", shellQuote(dir))
 	if tail > 0 {
 		cmd += fmt.Sprintf(" --tail %d", tail)

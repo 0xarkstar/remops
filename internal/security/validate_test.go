@@ -101,6 +101,39 @@ func TestValidateContainerName(t *testing.T) {
 	}
 }
 
+func TestValidateRemotePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"valid absolute", "/home/user/app", false},
+		{"valid with tilde", "~/monitoring", false},
+		{"valid deep path", "/opt/docker/stacks/monitoring", false},
+		{"valid with hyphen", "/home/my-user/my-app", false},
+		{"valid with underscore", "/home/user/my_app", false},
+		{"empty", "", true},
+		{"relative", "relative/path", true},
+		{"semicolon", "/home/user; rm -rf /", true},
+		{"pipe", "/home/user | cat", true},
+		{"backtick", "/home/user`whoami`", true},
+		{"dollar", "/home/$USER/app", true},
+		{"ampersand", "/home/user & evil", true},
+		{"newline", "/home/user\n/evil", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateRemotePath(tc.input)
+			if tc.wantErr && err == nil {
+				t.Errorf("ValidateRemotePath(%q): expected error, got nil", tc.input)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("ValidateRemotePath(%q): unexpected error: %v", tc.input, err)
+			}
+		})
+	}
+}
+
 func TestDetectShellInjection(t *testing.T) {
 	tests := []struct {
 		name    string
