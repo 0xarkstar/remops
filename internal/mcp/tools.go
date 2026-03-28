@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/0xarkstar/remops/internal/config"
+	"github.com/0xarkstar/remops/internal/docker"
 	"github.com/0xarkstar/remops/internal/security"
 )
 
@@ -383,6 +384,181 @@ func registerTools(s *Server) {
 
 	registrations = append(registrations, reg{
 		def: ToolDef{
+			Name:        "remops_stack_ps",
+			Description: "Show running containers in a Docker Compose stack.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"stack": map[string]any{"type": "string", "description": "Stack name"},
+				},
+				"required": []string{"stack"},
+			},
+		},
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+			if err := security.CheckPermission(s.profileLevel, config.LevelViewer); err != nil {
+				return nil, err
+			}
+			var p struct {
+				Stack string `json:"stack"`
+			}
+			if err := json.Unmarshal(raw, &p); err != nil || p.Stack == "" {
+				return nil, fmt.Errorf("stack is required")
+			}
+			stack, err := resolveStack(s, p.Stack)
+			if err != nil {
+				return nil, err
+			}
+			dc := docker.NewDockerClient(s.transport)
+			out, err := dc.ComposePS(ctx, stack.Host, stack.Path)
+			if err != nil {
+				return nil, err
+			}
+			return mcpContent(out), nil
+		},
+	})
+
+	registrations = append(registrations, reg{
+		def: ToolDef{
+			Name:        "remops_stack_logs",
+			Description: "Fetch logs for a Docker Compose stack.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"stack":   map[string]any{"type": "string", "description": "Stack name"},
+					"tail":    map[string]any{"type": "integer", "description": "Number of lines to tail"},
+					"since":   map[string]any{"type": "string", "description": "Show logs since timestamp or duration (e.g. 1h)"},
+					"service": map[string]any{"type": "string", "description": "Filter by service name within the stack"},
+				},
+				"required": []string{"stack"},
+			},
+		},
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+			if err := security.CheckPermission(s.profileLevel, config.LevelViewer); err != nil {
+				return nil, err
+			}
+			var p struct {
+				Stack   string `json:"stack"`
+				Tail    int    `json:"tail"`
+				Since   string `json:"since"`
+				Service string `json:"service"`
+			}
+			if err := json.Unmarshal(raw, &p); err != nil || p.Stack == "" {
+				return nil, fmt.Errorf("stack is required")
+			}
+			if p.Since != "" {
+				if err := security.DetectShellInjection(p.Since); err != nil {
+					return nil, fmt.Errorf("invalid since value: %w", err)
+				}
+			}
+			stack, err := resolveStack(s, p.Stack)
+			if err != nil {
+				return nil, err
+			}
+			dc := docker.NewDockerClient(s.transport)
+			out, err := dc.ComposeLogs(ctx, stack.Host, stack.Path, p.Tail, p.Since, p.Service)
+			if err != nil {
+				return nil, err
+			}
+			return mcpContent(out), nil
+		},
+	})
+
+	registrations = append(registrations, reg{
+		def: ToolDef{
+			Name:        "remops_stack_up",
+			Description: "Bring up a Docker Compose stack (docker compose up -d).",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"stack":   map[string]any{"type": "string", "description": "Stack name"},
+					"confirm": map[string]any{"type": "boolean", "description": "Must be true to execute"},
+				},
+				"required": []string{"stack", "confirm"},
+			},
+		},
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+			return composeAction(ctx, s, raw, "up -d")
+		},
+	})
+
+	registrations = append(registrations, reg{
+		def: ToolDef{
+			Name:        "remops_stack_pull",
+			Description: "Pull latest images for a Docker Compose stack.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"stack":   map[string]any{"type": "string", "description": "Stack name"},
+					"confirm": map[string]any{"type": "boolean", "description": "Must be true to execute"},
+				},
+				"required": []string{"stack", "confirm"},
+			},
+		},
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+			return composeAction(ctx, s, raw, "pull")
+		},
+	})
+
+	registrations = append(registrations, reg{
+		def: ToolDef{
+			Name:        "remops_stack_restart",
+			Description: "Restart all services in a Docker Compose stack.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"stack":   map[string]any{"type": "string", "description": "Stack name"},
+					"confirm": map[string]any{"type": "boolean", "description": "Must be true to execute"},
+				},
+				"required": []string{"stack", "confirm"},
+			},
+		},
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+			return composeAction(ctx, s, raw, "restart")
+		},
+	})
+
+	registrations = append(registrations, reg{
+		def: ToolDef{
+			Name:        "remops_stack_down",
+			Description: "Bring down a Docker Compose stack. Requires admin permission.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"stack":   map[string]any{"type": "string", "description": "Stack name"},
+					"confirm": map[string]any{"type": "boolean", "description": "Must be true to execute"},
+				},
+				"required": []string{"stack", "confirm"},
+			},
+		},
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+			if err := security.CheckPermission(s.profileLevel, config.LevelAdmin); err != nil {
+				return nil, err
+			}
+			var p struct {
+				Stack   string `json:"stack"`
+				Confirm bool   `json:"confirm"`
+			}
+			if err := json.Unmarshal(raw, &p); err != nil || p.Stack == "" {
+				return nil, fmt.Errorf("stack is required")
+			}
+			if !p.Confirm {
+				return nil, fmt.Errorf("confirm must be true to down stack")
+			}
+			stack, err := resolveStack(s, p.Stack)
+			if err != nil {
+				return nil, err
+			}
+			dc := docker.NewDockerClient(s.transport)
+			out, exitCode, err := dc.ComposeAction(ctx, stack.Host, stack.Path, "down")
+			if err != nil {
+				return nil, err
+			}
+			return mcpContent(fmt.Sprintf("down stack %s: exit_code=%d\n%s", p.Stack, exitCode, out)), nil
+		},
+	})
+
+	registrations = append(registrations, reg{
+		def: ToolDef{
 			Name:        "remops_db_query",
 			Description: "Run a SQL query on a service's database via docker exec.",
 			InputSchema: map[string]any{
@@ -466,6 +642,63 @@ func registerTools(s *Server) {
 // escapeSingleQuotes escapes single quotes for use inside single-quoted shell arguments.
 func escapeSingleQuotes(s string) string {
 	return strings.ReplaceAll(s, "'", "'\\''")
+}
+
+// resolveStack looks up a stack by name from the server config.
+func resolveStack(s *Server, name string) (config.Stack, error) {
+	if s.config == nil || s.config.Stacks == nil {
+		return config.Stack{}, fmt.Errorf("no stacks configured")
+	}
+	stack, ok := s.config.Stacks[name]
+	if !ok {
+		return config.Stack{}, fmt.Errorf("unknown stack: %s", name)
+	}
+	return stack, nil
+}
+
+// composeAction handles operator-level compose actions (up -d, pull, restart).
+func composeAction(ctx context.Context, s *Server, raw json.RawMessage, action string) (any, error) {
+	if err := security.CheckPermission(s.profileLevel, config.LevelOperator); err != nil {
+		return nil, err
+	}
+	var p struct {
+		Stack   string `json:"stack"`
+		Confirm bool   `json:"confirm"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil || p.Stack == "" {
+		return nil, fmt.Errorf("stack is required")
+	}
+	if !p.Confirm {
+		return nil, fmt.Errorf("confirm must be true to %s stack", action)
+	}
+	stack, err := resolveStack(s, p.Stack)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.approver != nil {
+		timeout := 5 * time.Minute
+		if s.config.Approval != nil {
+			timeout = s.config.Approval.EffectiveTimeout()
+		}
+		approvalCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		desc := fmt.Sprintf("compose %s stack %s on %s", action, p.Stack, stack.Host)
+		approved, err := s.approver.RequestApproval(approvalCtx, desc)
+		if err != nil {
+			return nil, fmt.Errorf("approval failed: %w", err)
+		}
+		if !approved {
+			return nil, fmt.Errorf("denied by approver")
+		}
+	}
+
+	dc := docker.NewDockerClient(s.transport)
+	out, exitCode, err := dc.ComposeAction(ctx, stack.Host, stack.Path, action)
+	if err != nil {
+		return nil, err
+	}
+	return mcpContent(fmt.Sprintf("compose %s stack %s: exit_code=%d\n%s", action, p.Stack, exitCode, out)), nil
 }
 
 // resolveHosts returns the host names to target based on optional host/tag filters.

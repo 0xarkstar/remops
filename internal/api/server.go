@@ -81,6 +81,12 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	mux.HandleFunc("GET /api/v1/doctor", s.authMiddleware(s.handleDoctor))
 	mux.HandleFunc("POST /api/v1/db/{service}/query", s.authMiddleware(s.handleDBQuery))
 	mux.HandleFunc("GET /api/v1/version", s.authMiddleware(s.handleVersion))
+	mux.HandleFunc("GET /api/v1/stacks/{name}/ps", s.authMiddleware(s.handleStackPS))
+	mux.HandleFunc("GET /api/v1/stacks/{name}/logs", s.authMiddleware(s.handleStackLogs))
+	mux.HandleFunc("POST /api/v1/stacks/{name}/up", s.authMiddleware(s.handleStackAction("up -d")))
+	mux.HandleFunc("POST /api/v1/stacks/{name}/pull", s.authMiddleware(s.handleStackAction("pull")))
+	mux.HandleFunc("POST /api/v1/stacks/{name}/restart", s.authMiddleware(s.handleStackAction("restart")))
+	mux.HandleFunc("POST /api/v1/stacks/{name}/down", s.authMiddleware(s.handleStackDown))
 
 	srv := &http.Server{
 		Addr:              addr,

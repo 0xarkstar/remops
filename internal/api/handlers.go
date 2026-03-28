@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/0xarkstar/remops/internal/config"
+	"github.com/0xarkstar/remops/internal/docker"
 	"github.com/0xarkstar/remops/internal/security"
 )
 
@@ -454,6 +455,195 @@ func (s *Server) handleDBQuery(w http.ResponseWriter, r *http.Request) {
 		combined += res.Stderr
 	}
 	jsonResponse(w, http.StatusOK, map[string]string{"result": security.SanitizeOutput(combined)})
+}
+
+func (s *Server) handleStackPS(w http.ResponseWriter, r *http.Request) {
+	profile := s.profileFromRequest(r)
+	if err := security.CheckPermission(profile, config.LevelViewer); err != nil {
+		jsonError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	name := r.PathValue("name")
+	stack, ok := s.config.Stacks[name]
+	if !ok {
+		jsonError(w, http.StatusNotFound, fmt.Sprintf("unknown stack: %s", name))
+		return
+	}
+
+	dc := docker.NewDockerClient(s.transport)
+	out, err := dc.ComposePS(r.Context(), stack.Host, stack.Path)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"stack": name, "ps": security.SanitizeOutput(out)})
+}
+
+func (s *Server) handleStackLogs(w http.ResponseWriter, r *http.Request) {
+	profile := s.profileFromRequest(r)
+	if err := security.CheckPermission(profile, config.LevelViewer); err != nil {
+		jsonError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	name := r.PathValue("name")
+	stack, ok := s.config.Stacks[name]
+	if !ok {
+		jsonError(w, http.StatusNotFound, fmt.Sprintf("unknown stack: %s", name))
+		return
+	}
+
+	var tail int
+	if t := r.URL.Query().Get("tail"); t != "" {
+		if n, err := strconv.Atoi(t); err == nil && n > 0 {
+			tail = n
+		}
+	}
+	since := r.URL.Query().Get("since")
+	if since != "" {
+		if err := security.DetectShellInjection(since); err != nil {
+			jsonError(w, http.StatusBadRequest, fmt.Sprintf("invalid since value: %v", err))
+			return
+		}
+	}
+	service := r.URL.Query().Get("service")
+
+	dc := docker.NewDockerClient(s.transport)
+	out, err := dc.ComposeLogs(r.Context(), stack.Host, stack.Path, tail, since, service)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"stack": name, "logs": security.SanitizeOutput(out)})
+}
+
+// handleStackAction returns a handler for operator-level compose actions (up -d, pull, restart).
+func (s *Server) handleStackAction(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		profile := s.profileFromRequest(r)
+		if err := security.CheckPermission(profile, config.LevelOperator); err != nil {
+			jsonError(w, http.StatusForbidden, err.Error())
+			return
+		}
+
+		name := r.PathValue("name")
+		stack, ok := s.config.Stacks[name]
+		if !ok {
+			jsonError(w, http.StatusNotFound, fmt.Sprintf("unknown stack: %s", name))
+			return
+		}
+
+		var body struct {
+			Confirm bool `json:"confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if !body.Confirm {
+			jsonError(w, http.StatusBadRequest, fmt.Sprintf("confirm must be true to %s stack", action))
+			return
+		}
+
+		if s.approver != nil {
+			timeout := 5 * time.Minute
+			if s.config.Approval != nil {
+				timeout = s.config.Approval.EffectiveTimeout()
+			}
+			approvalCtx, cancel := context.WithTimeout(r.Context(), timeout)
+			defer cancel()
+			desc := fmt.Sprintf("HTTP API: compose %s stack %s on %s", action, name, stack.Host)
+			approved, err := s.approver.RequestApproval(approvalCtx, desc)
+			if err != nil {
+				jsonError(w, http.StatusGatewayTimeout, fmt.Sprintf("approval request failed: %v", err))
+				return
+			}
+			if !approved {
+				jsonError(w, http.StatusForbidden, "operation denied by approver")
+				return
+			}
+		}
+
+		dc := docker.NewDockerClient(s.transport)
+		out, exitCode, err := dc.ComposeAction(r.Context(), stack.Host, stack.Path, action)
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		if s.auditLogger != nil {
+			if err := s.auditLogger.Log(security.AuditEntry{
+				Command: "compose " + action,
+				Host:    stack.Host,
+				Profile: profile.String(),
+				Result:  "success",
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "api: audit log: %v\n", err)
+			}
+		}
+
+		jsonResponse(w, http.StatusOK, map[string]any{
+			"action":    action,
+			"stack":     name,
+			"host":      stack.Host,
+			"exit_code": exitCode,
+			"output":    security.SanitizeOutput(out),
+		})
+	}
+}
+
+func (s *Server) handleStackDown(w http.ResponseWriter, r *http.Request) {
+	profile := s.profileFromRequest(r)
+	if err := security.CheckPermission(profile, config.LevelAdmin); err != nil {
+		jsonError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	name := r.PathValue("name")
+	stack, ok := s.config.Stacks[name]
+	if !ok {
+		jsonError(w, http.StatusNotFound, fmt.Sprintf("unknown stack: %s", name))
+		return
+	}
+
+	var body struct {
+		Confirm bool `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if !body.Confirm {
+		jsonError(w, http.StatusBadRequest, "confirm must be true to down stack")
+		return
+	}
+
+	dc := docker.NewDockerClient(s.transport)
+	out, exitCode, err := dc.ComposeAction(r.Context(), stack.Host, stack.Path, "down")
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if s.auditLogger != nil {
+		if err := s.auditLogger.Log(security.AuditEntry{
+			Command: "compose down",
+			Host:    stack.Host,
+			Profile: profile.String(),
+			Result:  "success",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "api: audit log: %v\n", err)
+		}
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"action":    "down",
+		"stack":     name,
+		"host":      stack.Host,
+		"exit_code": exitCode,
+		"output":    security.SanitizeOutput(out),
+	})
 }
 
 // resolveHosts returns host names based on optional filters.

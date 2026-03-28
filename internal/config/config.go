@@ -93,6 +93,18 @@ func validate(cfg *Config) error {
 		}
 	}
 
+	for name, stack := range cfg.Stacks {
+		if stack.Host == "" {
+			return fmt.Errorf("stack %q: host is required", name)
+		}
+		if _, ok := cfg.Hosts[stack.Host]; !ok {
+			return fmt.Errorf("stack %q: references unknown host %q", name, stack.Host)
+		}
+		if stack.Path == "" {
+			return fmt.Errorf("stack %q: path is required", name)
+		}
+	}
+
 	for name, profile := range cfg.Profiles {
 		switch profile.Level {
 		case "viewer", "operator", "admin":
@@ -191,4 +203,31 @@ func (c *Config) AllServiceNames() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// AllStackNames returns all stack names.
+func (c *Config) AllStackNames() []string {
+	names := make([]string, 0, len(c.Stacks))
+	for name := range c.Stacks {
+		names = append(names, name)
+	}
+	return names
+}
+
+// StacksByTag returns stack names matching any of the given tags.
+func (c *Config) StacksByTag(tags ...string) []string {
+	tagSet := make(map[string]bool, len(tags))
+	for _, t := range tags {
+		tagSet[t] = true
+	}
+	var result []string
+	for name, stack := range c.Stacks {
+		for _, t := range stack.Tags {
+			if tagSet[t] {
+				result = append(result, name)
+				break
+			}
+		}
+	}
+	return result
 }

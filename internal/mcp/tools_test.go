@@ -591,6 +591,118 @@ func TestWithAuditLogger(t *testing.T) {
 	}
 }
 
+func stackConfig() *config.Config {
+	return &config.Config{
+		Version: 1,
+		Hosts:   map[string]config.Host{"web1": {Address: "1.1.1.1"}},
+		Services: map[string]config.Service{},
+		Stacks: map[string]config.Stack{
+			"monitoring": {Host: "web1", Path: "/home/user/monitoring"},
+		},
+		Profiles: map[string]config.Profile{},
+	}
+}
+
+func TestStackPS_Success(t *testing.T) {
+	mt := &mockTransport{
+		execFunc: func(_ context.Context, _, _ string) (transport.ExecResult, error) {
+			return transport.ExecResult{Stdout: `[{"Name":"prometheus","State":"running"}]` + "\n", ExitCode: 0}, nil
+		},
+	}
+	s := NewServer(stackConfig(), mt)
+	params, _ := json.Marshal(map[string]any{
+		"name":      "remops_stack_ps",
+		"arguments": map[string]any{"stack": "monitoring"},
+	})
+	result, rpcErr := s.dispatch(context.Background(), &JSONRPCRequest{
+		Method: "tools/call",
+		Params: params,
+	})
+	if rpcErr != nil {
+		t.Fatalf("unexpected rpc error: %+v", rpcErr)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+}
+
+func TestStackPS_UnknownStack(t *testing.T) {
+	s := NewServer(stackConfig(), nil)
+	params, _ := json.Marshal(map[string]any{
+		"name":      "remops_stack_ps",
+		"arguments": map[string]any{"stack": "unknown"},
+	})
+	_, rpcErr := s.dispatch(context.Background(), &JSONRPCRequest{
+		Method: "tools/call",
+		Params: params,
+	})
+	if rpcErr == nil {
+		t.Fatal("expected error for unknown stack, got nil")
+	}
+	if !strings.Contains(rpcErr.Message, "unknown stack") {
+		t.Errorf("expected 'unknown stack' in error, got: %s", rpcErr.Message)
+	}
+}
+
+func TestStackUp_Success(t *testing.T) {
+	mt := &mockTransport{
+		execFunc: func(_ context.Context, _, _ string) (transport.ExecResult, error) {
+			return transport.ExecResult{Stdout: "Container prometheus  Started\n", ExitCode: 0}, nil
+		},
+	}
+	s := NewServer(stackConfig(), mt)
+	params, _ := json.Marshal(map[string]any{
+		"name":      "remops_stack_up",
+		"arguments": map[string]any{"stack": "monitoring", "confirm": true},
+	})
+	result, rpcErr := s.dispatch(context.Background(), &JSONRPCRequest{
+		Method: "tools/call",
+		Params: params,
+	})
+	if rpcErr != nil {
+		t.Fatalf("unexpected rpc error: %+v", rpcErr)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+}
+
+func TestStackUp_NoConfirm(t *testing.T) {
+	s := NewServer(stackConfig(), nil)
+	params, _ := json.Marshal(map[string]any{
+		"name":      "remops_stack_up",
+		"arguments": map[string]any{"stack": "monitoring", "confirm": false},
+	})
+	_, rpcErr := s.dispatch(context.Background(), &JSONRPCRequest{
+		Method: "tools/call",
+		Params: params,
+	})
+	if rpcErr == nil {
+		t.Fatal("expected error when confirm=false, got nil")
+	}
+	if !strings.Contains(rpcErr.Message, "confirm") {
+		t.Errorf("expected 'confirm' in error, got: %s", rpcErr.Message)
+	}
+}
+
+func TestStackDown_ViewerDenied(t *testing.T) {
+	s := NewServer(stackConfig(), nil, WithProfile(config.LevelViewer))
+	params, _ := json.Marshal(map[string]any{
+		"name":      "remops_stack_down",
+		"arguments": map[string]any{"stack": "monitoring", "confirm": true},
+	})
+	_, rpcErr := s.dispatch(context.Background(), &JSONRPCRequest{
+		Method: "tools/call",
+		Params: params,
+	})
+	if rpcErr == nil {
+		t.Fatal("expected permission denied error, got nil")
+	}
+	if !strings.Contains(rpcErr.Message, "permission denied") {
+		t.Errorf("expected 'permission denied' in error, got: %s", rpcErr.Message)
+	}
+}
+
 func TestServiceLifecycleWithConfirm(t *testing.T) {
 	cfg := &config.Config{
 		Version:  1,

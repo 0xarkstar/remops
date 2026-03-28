@@ -128,6 +128,21 @@ func TestParseInvalid(t *testing.T) {
 			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\nservices:\n  svc1:\n    host: h1\n    container: c1\n    db:\n      engine: mysql\n      user: root\n",
 			wantErr: "db.database is required",
 		},
+		{
+			name:    "stack missing host",
+			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\nstacks:\n  mystack:\n    path: /home/user/app\n",
+			wantErr: "host is required",
+		},
+		{
+			name:    "stack unknown host",
+			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\nstacks:\n  mystack:\n    host: unknown\n    path: /home/user/app\n",
+			wantErr: "unknown host",
+		},
+		{
+			name:    "stack missing path",
+			yaml:    "version: 1\nhosts:\n  h1:\n    address: 1.2.3.4\nstacks:\n  mystack:\n    host: h1\n",
+			wantErr: "path is required",
+		},
 	}
 
 	for _, tc := range tests {
@@ -243,5 +258,32 @@ func TestAllServiceNames(t *testing.T) {
 	names := cfg.AllServiceNames()
 	if len(names) != 1 || names[0] != "myapp" {
 		t.Errorf("AllServiceNames: want [myapp], got %v", names)
+	}
+}
+
+func TestParseValidStacks(t *testing.T) {
+	yaml := `version: 1
+hosts:
+  prod:
+    address: 1.2.3.4
+stacks:
+  monitoring:
+    host: prod
+    path: /home/user/monitoring
+    tags: [infra]
+`
+	cfg, err := LoadFrom(writeConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Stacks) != 1 {
+		t.Errorf("stacks: want 1, got %d", len(cfg.Stacks))
+	}
+	if cfg.Stacks["monitoring"].Path != "/home/user/monitoring" {
+		t.Errorf("path: want /home/user/monitoring, got %s", cfg.Stacks["monitoring"].Path)
+	}
+	names := cfg.AllStackNames()
+	if len(names) != 1 || names[0] != "monitoring" {
+		t.Errorf("AllStackNames: want [monitoring], got %v", names)
 	}
 }

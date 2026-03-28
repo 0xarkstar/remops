@@ -7,6 +7,7 @@ type Config struct {
 	Version  int                `yaml:"version"`
 	Hosts    map[string]Host    `yaml:"hosts"`
 	Services map[string]Service `yaml:"services"`
+	Stacks   map[string]Stack   `yaml:"stacks,omitempty"`
 	Profiles map[string]Profile `yaml:"profiles"`
 	Presets  map[string]string  `yaml:"presets,omitempty"`
 	Plugins  []string           `yaml:"plugins,omitempty"`
@@ -62,6 +63,13 @@ type Service struct {
 	Container string    `yaml:"container"`
 	Tags      []string  `yaml:"tags,omitempty"`
 	DB        *DBConfig `yaml:"db,omitempty"`
+}
+
+// Stack maps a logical name to a Docker Compose project directory on a host.
+type Stack struct {
+	Host string   `yaml:"host"`
+	Path string   `yaml:"path"`
+	Tags []string `yaml:"tags,omitempty"`
 }
 
 // DBConfig defines database connection settings for a service.

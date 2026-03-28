@@ -622,3 +622,88 @@ func TestWithProfile_SetsProfileOnServer(t *testing.T) {
 		t.Errorf("WithProfile: want operator, got %v", s.profileLevel)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Stack helpers
+// ---------------------------------------------------------------------------
+
+func stackConfig() *config.Config {
+	cfg := minimalConfig()
+	cfg.Stacks = map[string]config.Stack{
+		"monitoring": {Host: "web1", Path: "/home/user/monitoring"},
+	}
+	return cfg
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/stacks/{name}/ps
+// ---------------------------------------------------------------------------
+
+func TestStackPS_API_Success(t *testing.T) {
+	mt := &mockTransport{
+		execFunc: func(_ context.Context, _, _ string) (transport.ExecResult, error) {
+			return transport.ExecResult{Stdout: `[{"Name":"prometheus","State":"running"}]` + "\n", ExitCode: 0}, nil
+		},
+	}
+	s := NewServer(stackConfig(), mt)
+	req := httptest.NewRequest("GET", "/api/v1/stacks/monitoring/ps", nil)
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.SetPathValue("name", "monitoring")
+	w := httptest.NewRecorder()
+	s.authMiddleware(s.handleStackPS)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body=%s)", w.Code, w.Body.String())
+	}
+	m := decodeJSON(t, w)
+	if m["stack"] != "monitoring" {
+		t.Errorf("want stack 'monitoring', got %v", m["stack"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/stacks/{name}/up
+// ---------------------------------------------------------------------------
+
+func TestStackUp_API_Success(t *testing.T) {
+	mt := &mockTransport{
+		execFunc: func(_ context.Context, _, _ string) (transport.ExecResult, error) {
+			return transport.ExecResult{Stdout: "Container prometheus  Started\n", ExitCode: 0}, nil
+		},
+	}
+	s := NewServer(stackConfig(), mt)
+	req := httptest.NewRequest("POST", "/api/v1/stacks/monitoring/up",
+		jsonBody(map[string]bool{"confirm": true}))
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "monitoring")
+	w := httptest.NewRecorder()
+	s.authMiddleware(s.handleStackAction("up -d"))(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body=%s)", w.Code, w.Body.String())
+	}
+	m := decodeJSON(t, w)
+	if m["stack"] != "monitoring" {
+		t.Errorf("want stack 'monitoring', got %v", m["stack"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/stacks/{name}/down — viewer denied
+// ---------------------------------------------------------------------------
+
+func TestStackDown_API_ViewerDenied(t *testing.T) {
+	s := NewServer(stackConfig(), nil, WithProfile(config.LevelViewer))
+	req := httptest.NewRequest("POST", "/api/v1/stacks/monitoring/down",
+		jsonBody(map[string]bool{"confirm": true}))
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("name", "monitoring")
+	w := httptest.NewRecorder()
+	s.authMiddleware(s.handleStackDown)(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("want 403 for viewer attempting stack down, got %d", w.Code)
+	}
+}
