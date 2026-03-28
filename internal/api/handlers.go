@@ -266,10 +266,6 @@ func (s *Server) handleHostDisk(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHostExec(w http.ResponseWriter, r *http.Request) {
 	profile := s.profileFromRequest(r)
-	if err := security.CheckPermission(profile, config.LevelAdmin); err != nil {
-		jsonError(w, http.StatusForbidden, err.Error())
-		return
-	}
 
 	name := r.PathValue("name")
 	if err := security.ValidateHostName(name); err != nil {
@@ -292,6 +288,40 @@ func (s *Server) handleHostExec(w http.ResponseWriter, r *http.Request) {
 	if !body.Confirm {
 		jsonError(w, http.StatusBadRequest, "confirm must be true to execute command")
 		return
+	}
+	if err := security.DetectShellInjection(body.Command); err != nil {
+		jsonError(w, http.StatusBadRequest, fmt.Sprintf("command rejected: %v", err))
+		return
+	}
+
+	// Tiered permission: admin bypasses, operator gets tiered access.
+	if profile < config.LevelAdmin {
+		if err := security.CheckPermission(profile, config.LevelOperator); err != nil {
+			jsonError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		if !security.IsSafeCommand(body.Command) {
+			if s.approver == nil {
+				jsonError(w, http.StatusForbidden, fmt.Sprintf("command %q is not in the safe list and no approver is configured", body.Command))
+				return
+			}
+			timeout := 5 * time.Minute
+			if s.config.Approval != nil {
+				timeout = s.config.Approval.EffectiveTimeout()
+			}
+			approvalCtx, cancel := context.WithTimeout(r.Context(), timeout)
+			defer cancel()
+			desc := fmt.Sprintf("HTTP API host_exec on %s: %s", name, body.Command)
+			approved, err := s.approver.RequestApproval(approvalCtx, desc)
+			if err != nil {
+				jsonError(w, http.StatusGatewayTimeout, fmt.Sprintf("approval request failed: %v", err))
+				return
+			}
+			if !approved {
+				jsonError(w, http.StatusForbidden, "command denied by approver")
+				return
+			}
+		}
 	}
 
 	if s.auditLogger != nil {

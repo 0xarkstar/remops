@@ -282,9 +282,6 @@ func registerTools(s *Server) {
 				},
 			},
 			handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
-				if err := security.CheckPermission(s.profileLevel, config.LevelAdmin); err != nil {
-					return nil, err
-				}
 				var p struct {
 					Host    string `json:"host"`
 					Command string `json:"command"`
@@ -299,6 +296,36 @@ func registerTools(s *Server) {
 				if !p.Confirm {
 					return nil, fmt.Errorf("confirm must be true to execute command")
 				}
+				if err := security.DetectShellInjection(p.Command); err != nil {
+					return nil, fmt.Errorf("command rejected: %w", err)
+				}
+
+				// Tiered permission: admin bypasses, operator gets tiered access.
+				if s.profileLevel < config.LevelAdmin {
+					if err := security.CheckPermission(s.profileLevel, config.LevelOperator); err != nil {
+						return nil, err
+					}
+					if !security.IsSafeCommand(p.Command) {
+						if s.approver == nil {
+							return nil, fmt.Errorf("command %q is not in the safe list and no approver is configured; use admin profile or configure Telegram approval", p.Command)
+						}
+						timeout := 5 * time.Minute
+						if s.config.Approval != nil {
+							timeout = s.config.Approval.EffectiveTimeout()
+						}
+						approvalCtx, cancel := context.WithTimeout(ctx, timeout)
+						defer cancel()
+						desc := fmt.Sprintf("host_exec on %s: %s", p.Host, p.Command)
+						approved, err := s.approver.RequestApproval(approvalCtx, desc)
+						if err != nil {
+							return nil, fmt.Errorf("approval request failed: %w", err)
+						}
+						if !approved {
+							return nil, fmt.Errorf("command denied by approver")
+						}
+					}
+				}
+
 				if s.auditLogger != nil {
 					if err := s.auditLogger.Log(security.AuditEntry{
 						Command: p.Command,
