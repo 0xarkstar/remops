@@ -14,7 +14,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var flagInitOutput string
+var (
+	flagInitOutput string
+	flagInitMCP    bool
+)
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -112,6 +115,13 @@ Run 'remops doctor' after init to verify SSH connectivity.`,
 
 		fmt.Printf("\nConfig written to %s\n", outputPath)
 		fmt.Println("Run 'remops doctor' to verify connectivity.")
+
+		if flagInitMCP {
+			if err := setupMCPConfig(); err != nil {
+				return fmt.Errorf("mcp setup: %w", err)
+			}
+		}
+
 		return nil
 	},
 }
@@ -151,5 +161,6 @@ func prompt(scanner *bufio.Scanner, label, defaultVal string) string {
 
 func init() {
 	initCmd.Flags().StringVar(&flagInitOutput, "output", "", "Path to write the config file (default: ~/.config/remops/remops.yaml)")
+	initCmd.Flags().BoolVar(&flagInitMCP, "mcp", false, "Auto-configure Claude Code MCP integration after init")
 	rootCmd.AddCommand(initCmd)
 }
