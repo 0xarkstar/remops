@@ -110,7 +110,9 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Found %d new container(s). Add to config? [Y/n]: ", len(allNew))
 	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
+	if !scanner.Scan() {
+		return fmt.Errorf("failed to read input: %w", scanner.Err())
+	}
 	answer := strings.TrimSpace(scanner.Text())
 	if answer != "" && !strings.EqualFold(answer, "y") {
 		fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
@@ -153,8 +155,8 @@ func scanHosts(ctx context.Context, dc *docker.DockerClient, cfg *config.Config,
 			}
 
 			mu.Lock()
+			defer mu.Unlock()
 			results = append(results, r)
-			mu.Unlock()
 		}(h)
 	}
 
@@ -223,8 +225,8 @@ func appendServicesToConfig(containers []discoveredContainer) error {
 		return fmt.Errorf("cannot parse config: %w", err)
 	}
 
-	services, _ := raw["services"].(map[string]interface{})
-	if services == nil {
+	services, ok := raw["services"].(map[string]interface{})
+	if !ok || services == nil {
 		services = make(map[string]interface{})
 	}
 

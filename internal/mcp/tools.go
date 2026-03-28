@@ -15,9 +15,10 @@ import (
 
 // ToolDef describes a single MCP tool for the tools/list response.
 type ToolDef struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema map[string]any  `json:"inputSchema"`
+	Annotations map[string]bool `json:"annotations,omitempty"`
 }
 
 // mcpContent wraps text in the MCP content envelope format.
@@ -41,6 +42,11 @@ func registerTools(s *Server) {
 			def: ToolDef{
 				Name:        "remops_status",
 				Description: "List running Docker containers on one or more hosts.",
+				Annotations: map[string]bool{
+					"readOnlyHint":  true,
+					"idempotentHint": true,
+					"openWorldHint": true,
+				},
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -88,6 +94,11 @@ func registerTools(s *Server) {
 			def: ToolDef{
 				Name:        "remops_service_logs",
 				Description: "Fetch logs for a named service.",
+				Annotations: map[string]bool{
+					"readOnlyHint":  true,
+					"idempotentHint": true,
+					"openWorldHint": true,
+				},
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -151,6 +162,10 @@ func registerTools(s *Server) {
 			def: ToolDef{
 				Name:        "remops_service_restart",
 				Description: "Restart a named service container.",
+				Annotations: map[string]bool{
+					"idempotentHint": true,
+					"openWorldHint": true,
+				},
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -168,6 +183,10 @@ func registerTools(s *Server) {
 			def: ToolDef{
 				Name:        "remops_service_stop",
 				Description: "Stop a named service container.",
+				Annotations: map[string]bool{
+					"destructiveHint": true,
+					"openWorldHint":   true,
+				},
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -185,6 +204,10 @@ func registerTools(s *Server) {
 			def: ToolDef{
 				Name:        "remops_service_start",
 				Description: "Start a named service container.",
+				Annotations: map[string]bool{
+					"idempotentHint": true,
+					"openWorldHint":  true,
+				},
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -202,6 +225,11 @@ func registerTools(s *Server) {
 			def: ToolDef{
 				Name:        "remops_host_info",
 				Description: "Get system and Docker version info for a host.",
+				Annotations: map[string]bool{
+					"readOnlyHint":   true,
+					"idempotentHint": true,
+					"openWorldHint":  true,
+				},
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -240,6 +268,11 @@ func registerTools(s *Server) {
 			def: ToolDef{
 				Name:        "remops_host_disk",
 				Description: "Show disk usage for a host using df.",
+				Annotations: map[string]bool{
+					"readOnlyHint":   true,
+					"idempotentHint": true,
+					"openWorldHint":  true,
+				},
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -272,6 +305,10 @@ func registerTools(s *Server) {
 			def: ToolDef{
 				Name:        "remops_host_exec",
 				Description: "Execute an arbitrary command on a host. Requires admin permission and confirm=true.",
+				Annotations: map[string]bool{
+					"destructiveHint": true,
+					"openWorldHint":   true,
+				},
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -352,6 +389,11 @@ func registerTools(s *Server) {
 			def: ToolDef{
 				Name:        "remops_doctor",
 				Description: "Run health checks: ping all hosts and verify Docker is accessible.",
+				Annotations: map[string]bool{
+					"readOnlyHint":   true,
+					"idempotentHint": true,
+					"openWorldHint":  true,
+				},
 				InputSchema: map[string]any{
 					"type":       "object",
 					"properties": map[string]any{},
@@ -386,6 +428,11 @@ func registerTools(s *Server) {
 		def: ToolDef{
 			Name:        "remops_stack_ps",
 			Description: "Show running containers in a Docker Compose stack.",
+			Annotations: map[string]bool{
+				"readOnlyHint":   true,
+				"idempotentHint": true,
+				"openWorldHint":  true,
+			},
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -421,6 +468,11 @@ func registerTools(s *Server) {
 		def: ToolDef{
 			Name:        "remops_stack_logs",
 			Description: "Fetch logs for a Docker Compose stack.",
+			Annotations: map[string]bool{
+				"readOnlyHint":   true,
+				"idempotentHint": true,
+				"openWorldHint":  true,
+			},
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -467,6 +519,10 @@ func registerTools(s *Server) {
 		def: ToolDef{
 			Name:        "remops_stack_up",
 			Description: "Bring up a Docker Compose stack (docker compose up -d).",
+			Annotations: map[string]bool{
+				"idempotentHint": true,
+				"openWorldHint":  true,
+			},
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -485,6 +541,10 @@ func registerTools(s *Server) {
 		def: ToolDef{
 			Name:        "remops_stack_pull",
 			Description: "Pull latest images for a Docker Compose stack.",
+			Annotations: map[string]bool{
+				"idempotentHint": true,
+				"openWorldHint":  true,
+			},
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -503,6 +563,10 @@ func registerTools(s *Server) {
 		def: ToolDef{
 			Name:        "remops_stack_restart",
 			Description: "Restart all services in a Docker Compose stack.",
+			Annotations: map[string]bool{
+				"idempotentHint": true,
+				"openWorldHint":  true,
+			},
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -521,6 +585,10 @@ func registerTools(s *Server) {
 		def: ToolDef{
 			Name:        "remops_stack_down",
 			Description: "Bring down a Docker Compose stack. Requires admin permission.",
+			Annotations: map[string]bool{
+				"destructiveHint": true,
+				"openWorldHint":   true,
+			},
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -561,6 +629,9 @@ func registerTools(s *Server) {
 		def: ToolDef{
 			Name:        "remops_db_query",
 			Description: "Run a SQL query on a service's database via docker exec.",
+			Annotations: map[string]bool{
+				"openWorldHint": true,
+			},
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
