@@ -54,6 +54,9 @@ func (d *DockerClient) ComposeLogs(ctx context.Context, host, dir string, tail i
 		cmd += " --since " + since
 	}
 	if serviceName != "" {
+		if err := security.ValidateServiceName(serviceName); err != nil {
+			return "", fmt.Errorf("invalid service name: %w", err)
+		}
 		cmd += " " + serviceName
 	}
 	result, err := d.transport.Exec(ctx, host, cmd)
