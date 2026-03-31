@@ -35,6 +35,11 @@ func TestIsWriteQuery(t *testing.T) {
 		{"WITH cte AS (SELECT 1) DELETE FROM t WHERE id IN (SELECT * FROM cte)", true},
 		{"WITH cte AS (SELECT 1) INSERT INTO t SELECT * FROM cte", true},
 
+		// Stacked queries — semicolons always treated as write
+		{"SELECT 1; DROP TABLE x", true},
+		{"select 1; delete from t", true},
+		{"SHOW TABLES; INSERT INTO t VALUES (1)", true},
+
 		// Case insensitive
 		{"insert into t values (1)", true},
 		{"alter table t drop column x", true},

@@ -13,8 +13,20 @@ var writeKeywords = []string{
 // IsWriteQuery returns true if the SQL appears to be a write (mutating) statement.
 // Read-only prefixes (SELECT, SHOW, EXPLAIN, DESCRIBE) return false.
 // WITH (CTE) queries are scanned for write keywords in the body.
+// ContainsSemicolon returns true if the SQL contains a semicolon, indicating
+// stacked queries. Stacked queries allow write operations to be hidden after
+// a SELECT (e.g. "SELECT 1; DROP TABLE x").
+func ContainsSemicolon(sql string) bool {
+	return strings.Contains(sql, ";")
+}
+
 func IsWriteQuery(sql string) bool {
 	upper := strings.ToUpper(strings.TrimSpace(sql))
+
+	// Stacked queries are always treated as writes.
+	if strings.Contains(upper, ";") {
+		return true
+	}
 
 	// Read-only statements.
 	for _, prefix := range []string{"SELECT", "SHOW", "EXPLAIN", "DESCRIBE"} {
