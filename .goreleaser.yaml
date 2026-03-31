@@ -37,15 +37,14 @@ changelog:
       - "^test:"
       - "^chore:"
 
-# Uncomment when 0xarkstar/homebrew-tap repo is created:
-# brews:
-#   - repository:
-#       owner: 0xarkstar
-#       name: homebrew-tap
-#     homepage: "https://github.com/0xarkstar/remops"
-#     description: "Manage your servers from terminal, Claude Code, or Telegram — through one security pipeline"
-#     license: "Apache-2.0"
-#     install: |
-#       bin.install "remops"
-#     test: |
-#       system "#{bin}/remops", "--version"
+brews:
+  - repository:
+      owner: 0xarkstar
+      name: homebrew-tap
+    homepage: "https://github.com/0xarkstar/remops"
+    description: "Manage your servers from terminal, Claude Code, or Telegram — through one security pipeline"
+    license: "Apache-2.0"
+    install: |
+      bin.install "remops"
+    test: |
+      system "#{bin}/remops", "--version"

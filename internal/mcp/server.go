@@ -146,6 +146,14 @@ func (s *Server) Run(ctx context.Context) error {
 	return nil
 }
 
+// Dispatch routes a JSON-RPC request to the appropriate handler and returns
+// the result or an RPC error. It is exported so that external packages (e.g.
+// integration test suites) can invoke tool handlers directly without going
+// through the stdin/stdout loop.
+func (s *Server) Dispatch(ctx context.Context, req *JSONRPCRequest) (any, *RPCError) {
+	return s.dispatch(ctx, req)
+}
+
 // dispatch routes a request to the appropriate handler.
 func (s *Server) dispatch(ctx context.Context, req *JSONRPCRequest) (any, *RPCError) {
 	switch req.Method {

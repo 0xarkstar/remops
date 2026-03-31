@@ -54,12 +54,23 @@ You don't need to remember which server. You don't need to remember docker comma
 ### 1. Install
 
 ```bash
-# From source (Go 1.23+)
-go install github.com/0xarkstar/remops@latest
+# Homebrew (macOS/Linux)
+brew install 0xarkstar/tap/remops
 
-# Or download a binary from the releases page:
+# Or download a binary
 # https://github.com/0xarkstar/remops/releases
+
+# Or from source (Go 1.23+)
+go install github.com/0xarkstar/remops@latest
 ```
+
+Verify installation:
+```bash
+remops --version
+```
+
+**Requirements on remote hosts:** Docker 20.10+ and OpenSSH 7.6+ (no agent installation needed).
+Docker only — Podman is not supported.
 
 ### 2. Initialize
 
@@ -211,6 +222,14 @@ curl -H "Authorization: Bearer $KEY" http://localhost:9090/api/v1/doctor
 | POST | `/api/v1/stacks/:name/pull` | operator | Pull stack images |
 | POST | `/api/v1/stacks/:name/restart` | operator | Restart stack |
 | POST | `/api/v1/stacks/:name/down` | admin | Remove stack (destructive) |
+
+**Security note:** The HTTP API binds to all interfaces by default. For non-localhost exposure, use a reverse proxy (nginx/Caddy) with TLS termination, or bind to localhost only:
+
+```yaml
+api:
+  listen: "127.0.0.1:9090"
+  api_key: ${REMOPS_API_KEY}
+```
 
 ---
 
