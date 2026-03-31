@@ -766,13 +766,13 @@ func TestDBQuery_WriteQuery_OperatorAllowed(t *testing.T) {
 	}
 }
 
-func TestDBQuery_ProfileHeader_OperatorCanWrite(t *testing.T) {
+func TestDBQuery_ProfileHeader_CannotEscalate(t *testing.T) {
 	mt := &mockTransport{
 		execFunc: func(_ context.Context, _, _ string) (transport.ExecResult, error) {
 			return transport.ExecResult{Stdout: "DELETE 1\n"}, nil
 		},
 	}
-	// Server default viewer, but header elevates to operator.
+	// Server default viewer. Header tries to escalate to operator — should be clamped.
 	s := NewServer(dbConfig(), mt, WithProfile(config.LevelViewer))
 	req := httptest.NewRequest("POST", "/api/v1/db/myapp/query",
 		jsonBody(map[string]string{"query": "DELETE FROM t WHERE id=1"}))
@@ -783,8 +783,8 @@ func TestDBQuery_ProfileHeader_OperatorCanWrite(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.authMiddleware(s.handleDBQuery)(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200 for operator write query via profile header, got %d (body=%s)", w.Code, w.Body.String())
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("want 403 (escalation blocked), got %d (body=%s)", w.Code, w.Body.String())
 	}
 }
 

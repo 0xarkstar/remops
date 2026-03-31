@@ -92,6 +92,9 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      5 * time.Minute, // long for Telegram approval waits
+		MaxHeaderBytes:    1 << 20,         // 1MB max headers
 	}
 
 	// Graceful shutdown on context cancellation.
@@ -110,10 +113,15 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	return nil
 }
 
-// profileFromRequest reads the X-Remops-Profile header, falling back to server default.
+// profileFromRequest reads the X-Remops-Profile header, clamped to the server's
+// configured maximum. The header can only lower privileges, never raise them.
 func (s *Server) profileFromRequest(r *http.Request) config.PermissionLevel {
 	if p := r.Header.Get("X-Remops-Profile"); p != "" {
-		return config.ParseLevel(p)
+		requested := config.ParseLevel(p)
+		if requested > s.profileLevel {
+			return s.profileLevel // clamp: never escalate above server config
+		}
+		return requested
 	}
 	return s.profileLevel
 }

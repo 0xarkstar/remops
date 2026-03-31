@@ -9,7 +9,7 @@ import (
 
 var (
 	safeNameRe      = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+$`)
-	shellDangerRe   = regexp.MustCompile("[;|&`$(){}\\\\<>\n\r]")
+	shellDangerRe   = regexp.MustCompile("[;|&`$(){}\\\\<>\n\r\x00]")
 )
 
 // ValidateHostName checks that a host name is safe (alphanumeric, hyphen, underscore, dot).

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 )
@@ -20,10 +21,13 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		token := strings.TrimPrefix(auth, "Bearer ")
-		if token == auth || token != s.config.API.APIKey {
+		if token == auth || subtle.ConstantTimeCompare([]byte(token), []byte(s.config.API.APIKey)) != 1 {
 			jsonError(w, http.StatusUnauthorized, "invalid API key")
 			return
 		}
+
+		// Limit request body to 1MB to prevent OOM from large payloads.
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 		next(w, r)
 	}

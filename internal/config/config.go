@@ -12,6 +12,9 @@ import (
 // envVarPattern matches ${VAR} or ${VAR:-default} patterns.
 var envVarPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
+// safeDBFieldRe allows only safe characters in DB user/database names.
+var safeDBFieldRe = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+$`)
+
 // Load reads and parses the remops config from the first found path.
 func Load() (*Config, error) {
 	paths := DefaultConfigPaths()
@@ -140,8 +143,14 @@ func validate(cfg *Config) error {
 			if svc.DB.User == "" {
 				return fmt.Errorf("service %q: db.user is required", name)
 			}
+			if !safeDBFieldRe.MatchString(svc.DB.User) {
+				return fmt.Errorf("service %q: db.user %q contains unsafe characters", name, svc.DB.User)
+			}
 			if svc.DB.Database == "" {
 				return fmt.Errorf("service %q: db.database is required", name)
+			}
+			if !safeDBFieldRe.MatchString(svc.DB.Database) {
+				return fmt.Errorf("service %q: db.database %q contains unsafe characters", name, svc.DB.Database)
 			}
 		}
 	}
