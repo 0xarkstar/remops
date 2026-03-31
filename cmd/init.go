@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/0xarkstar/remops/internal/config"
+	sshconfig "github.com/kevinburke/ssh_config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -59,6 +60,34 @@ Run 'remops doctor' after init to verify SSH connectivity.`,
 		}
 
 		hosts := make(map[string]config.Host)
+
+		// Try to discover hosts from SSH config.
+		sshHosts := discoverSSHConfigHosts()
+		if len(sshHosts) > 0 {
+			fmt.Println("\nFound hosts in ~/.ssh/config:")
+			for i, h := range sshHosts {
+				fmt.Printf("  %d. %s (%s, user: %s)\n", i+1, h.Name, h.Address, h.User)
+			}
+			fmt.Print("\nImport these hosts? [Y/n]: ")
+			scanner.Scan()
+			answer := strings.TrimSpace(scanner.Text())
+			if answer == "" || strings.EqualFold(answer, "y") {
+				for _, h := range sshHosts {
+					host := config.Host{
+						Address: h.Address,
+						User:    h.User,
+					}
+					if h.Port != 22 {
+						host.Port = h.Port
+					}
+					if h.Key != "" {
+						host.Key = h.Key
+					}
+					hosts[h.Name] = host
+				}
+				fmt.Printf("Imported %d host(s).\n", len(sshHosts))
+			}
+		}
 
 		for {
 			fmt.Println()
@@ -124,6 +153,71 @@ Run 'remops doctor' after init to verify SSH connectivity.`,
 
 		return nil
 	},
+}
+
+type sshHostEntry struct {
+	Name    string
+	Address string
+	User    string
+	Port    int
+	Key     string
+}
+
+func discoverSSHConfigHosts() []sshHostEntry {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	f, err := os.Open(filepath.Join(home, ".ssh", "config"))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	cfg, err := sshconfig.Decode(f)
+	if err != nil {
+		return nil
+	}
+
+	var hosts []sshHostEntry
+	for _, host := range cfg.Hosts {
+		if len(host.Patterns) == 0 {
+			continue
+		}
+		name := host.Patterns[0].String()
+		if name == "*" || name == "" || strings.ContainsAny(name, "*?") {
+			continue
+		}
+
+		hostName, _ := cfg.Get(name, "HostName")
+		if hostName == "" {
+			continue
+		}
+
+		sshUser, _ := cfg.Get(name, "User")
+		portStr, _ := cfg.Get(name, "Port")
+		identityFile, _ := cfg.Get(name, "IdentityFile")
+
+		port := 22
+		if portStr != "" {
+			if p, err := strconv.Atoi(portStr); err == nil {
+				port = p
+			}
+		}
+
+		if strings.HasPrefix(identityFile, "~/") {
+			identityFile = filepath.Join(home, identityFile[2:])
+		}
+
+		hosts = append(hosts, sshHostEntry{
+			Name:    name,
+			Address: hostName,
+			User:    sshUser,
+			Port:    port,
+			Key:     identityFile,
+		})
+	}
+	return hosts
 }
 
 func buildDefaultConfig(hosts map[string]config.Host) *config.Config {

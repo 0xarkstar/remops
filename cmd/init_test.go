@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bufio"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -117,5 +119,116 @@ func TestPrompt_WhitespaceStripped(t *testing.T) {
 	got := prompt(scanner, "Enter value", "default")
 	if got != "trimmed" {
 		t.Errorf("prompt() = %q, want %q", got, "trimmed")
+	}
+}
+
+func TestDiscoverSSHConfigHosts(t *testing.T) {
+	// Create a temp home directory with an .ssh/config file.
+	tmpHome := t.TempDir()
+	sshDir := filepath.Join(tmpHome, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("failed to create .ssh dir: %v", err)
+	}
+
+	sshConfigContent := `Host prod
+  HostName 172.30.1.99
+  User arkstar
+  IdentityFile ~/.ssh/id_ed25519
+
+Host staging
+  HostName 10.0.0.5
+  User deploy
+  Port 2222
+
+Host *
+  ServerAliveInterval 60
+`
+	if err := os.WriteFile(filepath.Join(sshDir, "config"), []byte(sshConfigContent), 0o600); err != nil {
+		t.Fatalf("failed to write ssh config: %v", err)
+	}
+
+	// Override HOME so discoverSSHConfigHosts reads our temp config.
+	t.Setenv("HOME", tmpHome)
+
+	hosts := discoverSSHConfigHosts()
+
+	if len(hosts) != 2 {
+		t.Fatalf("expected 2 hosts, got %d: %+v", len(hosts), hosts)
+	}
+
+	byName := make(map[string]sshHostEntry)
+	for _, h := range hosts {
+		byName[h.Name] = h
+	}
+
+	prod, ok := byName["prod"]
+	if !ok {
+		t.Fatal("expected host 'prod'")
+	}
+	if prod.Address != "172.30.1.99" {
+		t.Errorf("prod address: want 172.30.1.99, got %s", prod.Address)
+	}
+	if prod.User != "arkstar" {
+		t.Errorf("prod user: want arkstar, got %s", prod.User)
+	}
+	if prod.Port != 22 {
+		t.Errorf("prod port: want 22, got %d", prod.Port)
+	}
+	if prod.Key == "" {
+		t.Error("prod key: expected non-empty after ~ expansion")
+	}
+
+	staging, ok := byName["staging"]
+	if !ok {
+		t.Fatal("expected host 'staging'")
+	}
+	if staging.Address != "10.0.0.5" {
+		t.Errorf("staging address: want 10.0.0.5, got %s", staging.Address)
+	}
+	if staging.User != "deploy" {
+		t.Errorf("staging user: want deploy, got %s", staging.User)
+	}
+	if staging.Port != 2222 {
+		t.Errorf("staging port: want 2222, got %d", staging.Port)
+	}
+}
+
+func TestDiscoverSSHConfigHosts_NoConfigFile(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	hosts := discoverSSHConfigHosts()
+	if hosts != nil {
+		t.Errorf("expected nil when no ssh config, got %v", hosts)
+	}
+}
+
+func TestDiscoverSSHConfigHosts_SkipsHostsWithoutHostName(t *testing.T) {
+	tmpHome := t.TempDir()
+	sshDir := filepath.Join(tmpHome, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("failed to create .ssh dir: %v", err)
+	}
+
+	// alias-only entry (no HostName) should be skipped.
+	sshConfigContent := `Host alias-only
+  User someone
+
+Host real
+  HostName 192.168.1.1
+  User ubuntu
+`
+	if err := os.WriteFile(filepath.Join(sshDir, "config"), []byte(sshConfigContent), 0o600); err != nil {
+		t.Fatalf("failed to write ssh config: %v", err)
+	}
+
+	t.Setenv("HOME", tmpHome)
+
+	hosts := discoverSSHConfigHosts()
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d: %+v", len(hosts), hosts)
+	}
+	if hosts[0].Name != "real" {
+		t.Errorf("expected host 'real', got %s", hosts[0].Name)
 	}
 }
