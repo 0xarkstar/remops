@@ -42,10 +42,6 @@ profiles:
   admin:
     level: admin
 
-api:
-  listen: "100.122.101.91:9090"
-  api_key: ${REMOPS_API_KEY}
-
 approval:
   method: telegram
   bot_token: ${TELEGRAM_BOT_TOKEN}

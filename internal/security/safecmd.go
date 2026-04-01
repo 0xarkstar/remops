@@ -29,6 +29,9 @@ var safeCommandPrefixes = []string{
 	"df -ih",
 	"ss -tlnp",
 	"ip addr",
+	"tmux ls",
+	"tmux list-sessions",
+	"tmux new -d",
 }
 
 // IsSafeCommand returns true if the command matches one of the hardcoded
