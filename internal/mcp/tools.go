@@ -347,7 +347,7 @@ func registerTools(s *Server) {
 					}
 					if !security.IsSafeCommand(p.Command) {
 						if s.approver == nil {
-							return nil, fmt.Errorf("command %q is not in the safe list and no approver is configured; use admin profile or configure Telegram approval", p.Command)
+							return nil, fmt.Errorf("command %q is not in the safe list and no approver is configured; use admin profile or configure approval (telegram, discord, or multi)", p.Command)
 						}
 						timeout := 5 * time.Minute
 						if s.config.Approval != nil {
