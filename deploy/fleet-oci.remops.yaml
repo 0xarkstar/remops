@@ -1,0 +1,46 @@
+# fleet@OCI — remops config template (config-as-code).
+#
+# Role: invoked by Hermes (OCI) as `remops mcp --profile operator`, reaching the
+# Macs over SSH/Tailscale. Write operations require out-of-band approval via
+# BOTH Telegram and Discord; the first channel the operator acts on wins.
+#
+# This is a TEMPLATE for a public repo: hosts use placeholder addresses and all
+# secrets are injected from the environment (BWS). Replace placeholders at
+# deploy time; never commit real Tailscale IPs, tokens, or chat/channel ids.
+
+version: 1
+
+hosts:
+  dev:
+    address: 100.0.0.0          # <- dev Mac Tailscale IP (BWS / deploy-time)
+    user: REPLACE_ME
+    description: "M4 Mac mini (dev) — holds Claude Code credentials"
+  prod:
+    address: 100.0.0.0          # <- prod Mac Tailscale IP
+    user: REPLACE_ME
+    description: "M4 Mac mini (prod)"
+
+profiles:
+  operator:
+    level: operator
+    approval: out-of-band       # write ops route through the approval section below
+  admin:
+    level: admin                # bypasses approval — use only for break-glass
+
+# MultiApprover: fan out to Telegram + Discord, first responder decides.
+approval:
+  method: multi
+  telegram:
+    bot_token: ${REMOPS_APPROVER_TELEGRAM_TOKEN}
+    chat_id: ${REMOPS_APPROVER_TELEGRAM_CHAT_ID}     # supergroup id, -100...
+  discord:
+    bot_token: ${REMOPS_APPROVER_DISCORD_TOKEN}
+    channel_id: ${REMOPS_APPROVER_DISCORD_CHANNEL_ID}
+    # Restrict who may approve/deny. Strongly recommended unless the channel is
+    # strictly private; with this empty, ANY non-bot member of the channel can
+    # decide. List your Discord user id(s):
+    # allowed_user_ids:
+    #   - "123456789012345678"
+  timeout: 5m
+  rate_limit:
+    max_writes_per_host_per_hour: 5

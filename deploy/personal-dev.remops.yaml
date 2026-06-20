@@ -1,0 +1,29 @@
+# personal@dev — remops config template (config-as-code).
+#
+# Role: invoked by your LOCAL Claude Code as `remops mcp --profile operator`.
+# NO approval section -> operator + no-approver. Safe-list commands run freely;
+# any unsafe command is DENIED (fail-closed), forcing a deliberate escalation
+# (explicit SSH, or a one-off --profile admin). This keeps a single security
+# layer above Claude Code's own permissions without a second remote human gate.
+#
+# TEMPLATE for a public repo: placeholder hosts, secrets from env (BWS).
+
+version: 1
+
+hosts:
+  dev:
+    address: 100.0.0.0          # <- dev Mac Tailscale IP
+    user: REPLACE_ME
+  prod:
+    address: 100.0.0.0          # <- prod Mac Tailscale IP
+    user: REPLACE_ME
+
+profiles:
+  operator:
+    level: operator
+  admin:
+    level: admin                # break-glass: bypasses the safe-list gate
+
+# NOTE: intentionally NO `approval:` section. With operator + nil approver,
+# unsafe commands are denied rather than gated, which is the desired posture for
+# a local, single-operator session.
