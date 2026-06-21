@@ -40,6 +40,7 @@ Tailscale IPs, bot tokens, or chat/channel ids.
 | `REMOPS_APPROVER_TELEGRAM_CHAT_ID` | fleet | supergroup id, `-100…` |
 | `REMOPS_APPROVER_DISCORD_TOKEN` | fleet | approver bot |
 | `REMOPS_APPROVER_DISCORD_CHANNEL_ID` | fleet | approval channel |
+| `REMOPS_APPROVER_DISCORD_OPERATOR_UID` | fleet | operator's Discord user id (allowlist; required) |
 
 `config.Load` expands `${VAR}` from the environment, so inject these from BWS
 before launching (`BWS_ACCESS_TOKEN` is already used by Hermes).
@@ -71,5 +72,6 @@ Add the bot to the server with the `bot` scope; in the approval channel it needs
 connection — no Add Reactions, Read Message History, public webhook, or inbound
 endpoint required (works behind NAT/Tailscale on OCI).
 
-Set `discord.allowed_user_ids` to the operator's Discord user id(s) so only they
-can decide; an empty list lets any non-bot member of the channel approve.
+`discord.allowed_user_ids` is **required** — config validation rejects an empty
+list, because Discord channel membership is mutable and not a sufficient
+authorization boundary. Only the listed user ids may decide.

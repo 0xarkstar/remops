@@ -36,11 +36,11 @@ approval:
   discord:
     bot_token: ${REMOPS_APPROVER_DISCORD_TOKEN}
     channel_id: ${REMOPS_APPROVER_DISCORD_CHANNEL_ID}
-    # Restrict who may approve/deny. Strongly recommended unless the channel is
-    # strictly private; with this empty, ANY non-bot member of the channel can
-    # decide. List your Discord user id(s):
-    # allowed_user_ids:
-    #   - "123456789012345678"
+    # REQUIRED: only these Discord user ids may approve/deny. Discord channel
+    # membership is mutable and is NOT a sufficient authorization boundary, so
+    # the operator id(s) must be pinned here. List one per line.
+    allowed_user_ids:
+      - "${REMOPS_APPROVER_DISCORD_OPERATOR_UID}"
   timeout: 5m
   rate_limit:
     max_writes_per_host_per_hour: 5

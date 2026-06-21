@@ -82,8 +82,13 @@ func (d *DiscordApprover) RequestApproval(ctx context.Context, action string) (b
 	}()
 
 	msg, err := session.ChannelMessageSendComplex(d.channelID, &discordgo.MessageSend{
-		Content:    fmt.Sprintf("🔐 Approval required\n\nAction: %s", action),
+		// Code-fence the action and disable all mentions so a crafted command
+		// string cannot inject @everyone/role pings or active links.
+		Content:    fmt.Sprintf("🔐 **Approval required**\n```\n%s\n```", action),
 		Components: approvalButtons(nonce),
+		AllowedMentions: &discordgo.MessageAllowedMentions{
+			Parse: []discordgo.AllowedMentionType{},
+		},
 	})
 	if err != nil {
 		return false, fmt.Errorf("send approval message: %w", err)

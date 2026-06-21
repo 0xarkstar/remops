@@ -41,7 +41,8 @@ func TestEffectiveDiscord(t *testing.T) {
 
 func TestValidateApproval(t *testing.T) {
 	tg := &TelegramApprovalConfig{BotToken: "t", ChatID: "c"}
-	dc := &DiscordApprovalConfig{BotToken: "d", ChannelID: "ch"}
+	dc := &DiscordApprovalConfig{BotToken: "d", ChannelID: "ch", AllowedUserIDs: []string{"op1"}}
+	dcNoAllow := &DiscordApprovalConfig{BotToken: "d", ChannelID: "ch"}
 
 	cases := []struct {
 		name    string
@@ -54,10 +55,12 @@ func TestValidateApproval(t *testing.T) {
 		{"telegram missing token", &ApprovalConfig{Method: "telegram", ChatID: "c"}, true},
 		{"discord ok", &ApprovalConfig{Method: "discord", Discord: dc}, false},
 		{"discord missing", &ApprovalConfig{Method: "discord"}, true},
-		{"discord missing channel", &ApprovalConfig{Method: "discord", Discord: &DiscordApprovalConfig{BotToken: "d"}}, true},
+		{"discord missing channel", &ApprovalConfig{Method: "discord", Discord: &DiscordApprovalConfig{BotToken: "d", AllowedUserIDs: []string{"op1"}}}, true},
+		{"discord no allowlist rejected", &ApprovalConfig{Method: "discord", Discord: dcNoAllow}, true},
 		{"multi ok", &ApprovalConfig{Method: "multi", Telegram: tg, Discord: dc}, false},
 		{"multi missing discord", &ApprovalConfig{Method: "multi", Telegram: tg}, true},
 		{"multi missing telegram", &ApprovalConfig{Method: "multi", Discord: dc}, true},
+		{"multi discord no allowlist rejected", &ApprovalConfig{Method: "multi", Telegram: tg, Discord: dcNoAllow}, true},
 		{"empty method", &ApprovalConfig{Method: ""}, true},
 		{"unknown method", &ApprovalConfig{Method: "carrier-pigeon", Telegram: tg}, true},
 	}
