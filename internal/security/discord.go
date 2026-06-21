@@ -38,7 +38,7 @@ type DiscordApprover struct {
 
 	mu      sync.Mutex
 	session *discordgo.Session
-	pending map[string]chan bool // nonce -> result channel
+	pending map[string]chan Approval // nonce -> result channel
 }
 
 // NewDiscordApprover creates a DiscordApprover for the given bot token and
@@ -54,24 +54,24 @@ func NewDiscordApprover(botToken, channelID string, allowedUserIDs ...string) *D
 		botToken:       botToken,
 		channelID:      channelID,
 		allowedUserIDs: allow,
-		pending:        make(map[string]chan bool),
+		pending:        make(map[string]chan Approval),
 	}
 }
 
 // RequestApproval posts an approval message with ✅/❌ buttons and blocks until
 // an authorized user clicks one or ctx is cancelled.
-func (d *DiscordApprover) RequestApproval(ctx context.Context, action string) (bool, error) {
+func (d *DiscordApprover) RequestApproval(ctx context.Context, action string) (Approval, error) {
 	session, err := d.ensureSession()
 	if err != nil {
-		return false, err
+		return Approval{}, err
 	}
 
 	nonce, err := generateUUID() // shared helper (telegram.go)
 	if err != nil {
-		return false, fmt.Errorf("approval nonce: %w", err)
+		return Approval{}, fmt.Errorf("approval nonce: %w", err)
 	}
 
-	resultCh := make(chan bool, 1)
+	resultCh := make(chan Approval, 1)
 	d.mu.Lock()
 	d.pending[nonce] = resultCh
 	d.mu.Unlock()
@@ -91,15 +91,16 @@ func (d *DiscordApprover) RequestApproval(ctx context.Context, action string) (b
 		},
 	})
 	if err != nil {
-		return false, fmt.Errorf("send approval message: %w", err)
+		return Approval{}, fmt.Errorf("send approval message: %w", err)
 	}
 
 	select {
-	case approved := <-resultCh:
-		return approved, nil
+	case approval := <-resultCh:
+		return approval, nil
 	case <-ctx.Done():
-		d.disableButtons(session, msg.ID, fmt.Sprintf("⏰ Expired / handled elsewhere: %s", action))
-		return false, fmt.Errorf("approval timed out: %w", ctx.Err())
+		// Distinguish "another channel handled it" from "timed out".
+		d.disableButtons(session, msg.ID, cancellationMessage(ctx, action))
+		return Approval{}, fmt.Errorf("approval timed out: %w", ctx.Err())
 	}
 }
 
@@ -186,7 +187,7 @@ func (d *DiscordApprover) onInteraction(s *discordgo.Session, ic *discordgo.Inte
 	d.mu.Lock()
 	delete(d.pending, nonce)
 	d.mu.Unlock()
-	resultCh <- approved // buffered; never blocks
+	resultCh <- Approval{Approved: approved, By: clicker, Via: "discord"} // buffered; never blocks
 }
 
 // disableButtons edits a message to remove its buttons and set final text.

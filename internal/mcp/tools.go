@@ -341,6 +341,7 @@ func registerTools(s *Server) {
 				}
 
 				// Tiered permission: admin bypasses, operator gets tiered access.
+				var approverID, approverVia string
 				if s.profileLevel < config.LevelAdmin {
 					if err := security.CheckPermission(s.profileLevel, config.LevelOperator); err != nil {
 						return nil, err
@@ -356,22 +357,25 @@ func registerTools(s *Server) {
 						approvalCtx, cancel := context.WithTimeout(ctx, timeout)
 						defer cancel()
 						desc := fmt.Sprintf("host_exec on %s: %s", p.Host, p.Command)
-						approved, err := s.approver.RequestApproval(approvalCtx, desc)
+						decision, err := s.approver.RequestApproval(approvalCtx, desc)
 						if err != nil {
 							return nil, fmt.Errorf("approval request failed: %w", err)
 						}
-						if !approved {
+						if !decision.Approved {
 							return nil, fmt.Errorf("command denied by approver")
 						}
+						approverID, approverVia = decision.By, decision.Via
 					}
 				}
 
 				if s.auditLogger != nil {
 					if err := s.auditLogger.Log(security.AuditEntry{
-						Command: p.Command,
-						Host:    p.Host,
-						Profile: s.profileLevel.String(),
-						Result:  "exec",
+						Command:  p.Command,
+						Host:     p.Host,
+						Profile:  s.profileLevel.String(),
+						Result:   "exec",
+						Approver: approverID,
+						Channel:  approverVia,
 					}); err != nil {
 						fmt.Fprintf(os.Stderr, "mcp: audit log: %v\n", err)
 					}
@@ -767,11 +771,11 @@ func composeAction(ctx context.Context, s *Server, raw json.RawMessage, action s
 		approvalCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		desc := fmt.Sprintf("compose %s stack %s on %s", action, p.Stack, stack.Host)
-		approved, err := s.approver.RequestApproval(approvalCtx, desc)
+		decision, err := s.approver.RequestApproval(approvalCtx, desc)
 		if err != nil {
 			return nil, fmt.Errorf("approval failed: %w", err)
 		}
-		if !approved {
+		if !decision.Approved {
 			return nil, fmt.Errorf("denied by approver")
 		}
 	}
@@ -829,6 +833,7 @@ func serviceLifecycle(ctx context.Context, s *Server, raw json.RawMessage, actio
 		return nil, err
 	}
 
+	var approverID, approverVia string
 	if s.approver != nil {
 		timeout := 5 * time.Minute
 		if s.config.Approval != nil {
@@ -837,13 +842,14 @@ func serviceLifecycle(ctx context.Context, s *Server, raw json.RawMessage, actio
 		approvalCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		desc := fmt.Sprintf("%s service %s on %s", action, p.Service, svc.Host)
-		approved, err := s.approver.RequestApproval(approvalCtx, desc)
+		decision, err := s.approver.RequestApproval(approvalCtx, desc)
 		if err != nil {
 			return nil, fmt.Errorf("approval request failed: %w", err)
 		}
-		if !approved {
+		if !decision.Approved {
 			return nil, fmt.Errorf("operation denied by approver")
 		}
+		approverID, approverVia = decision.By, decision.Via
 	}
 
 	if s.rateLimiter != nil {
@@ -865,11 +871,13 @@ func serviceLifecycle(ctx context.Context, s *Server, raw json.RawMessage, actio
 	}
 	if s.auditLogger != nil {
 		if err := s.auditLogger.Log(security.AuditEntry{
-			Command: action,
-			Host:    svc.Host,
-			Service: p.Service,
-			Profile: s.profileLevel.String(),
-			Result:  "success",
+			Command:  action,
+			Host:     svc.Host,
+			Service:  p.Service,
+			Profile:  s.profileLevel.String(),
+			Result:   "success",
+			Approver: approverID,
+			Channel:  approverVia,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "mcp: audit log: %v\n", err)
 		}

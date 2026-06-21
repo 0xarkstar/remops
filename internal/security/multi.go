@@ -2,15 +2,39 @@ package security
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
+// handledElsewhereError is the cancellation cause MultiApprover sets when one
+// channel produces a decision, so the cancelled channels can display
+// "Approved/Denied on <channel>" instead of an ambiguous timeout.
+type handledElsewhereError struct{ winner Approval }
+
+func (e *handledElsewhereError) Error() string { return "approval handled by another channel" }
+
+// cancellationMessage renders the final prompt text for an approval that was
+// cancelled before the operator acted on THIS channel: either another channel
+// handled it (multi) or the request timed out.
+func cancellationMessage(ctx context.Context, action string) string {
+	var he *handledElsewhereError
+	if errors.As(context.Cause(ctx), &he) {
+		icon, verb := "✅", "Approved"
+		if !he.winner.Approved {
+			icon, verb = "❌", "Denied"
+		}
+		via := he.winner.Via
+		if via == "" {
+			via = "another channel"
+		}
+		return fmt.Sprintf("%s %s on %s: %s", icon, verb, via, action)
+	}
+	return fmt.Sprintf("⏰ Timed out: %s", action)
+}
+
 // MultiApprover fans an approval request out to several Approvers concurrently
 // and resolves on the first one to return a decision (approve or deny). The
-// remaining approvers are cancelled so their prompts reflect "already handled".
-//
-// This implements the first-responder-wins policy: whichever channel the
-// operator acts on first decides the outcome.
+// remaining approvers are cancelled with a cause carrying the winning decision.
 type MultiApprover struct {
 	approvers []Approver
 }
@@ -21,28 +45,28 @@ func NewMultiApprover(approvers ...Approver) *MultiApprover {
 }
 
 type approvalResult struct {
-	approved bool
+	approval Approval
 	err      error
 }
 
 // RequestApproval blocks until the first approver returns a decision, ctx is
-// cancelled, or every approver fails. A decision from any single channel
-// (approve or deny) wins and cancels the others.
-func (m *MultiApprover) RequestApproval(ctx context.Context, action string) (bool, error) {
+// cancelled, or every approver fails. A decision from any single channel wins
+// and cancels the others.
+func (m *MultiApprover) RequestApproval(ctx context.Context, action string) (Approval, error) {
 	if len(m.approvers) == 0 {
-		return false, fmt.Errorf("multi approver: no approvers configured")
+		return Approval{}, fmt.Errorf("multi approver: no approvers configured")
 	}
 
-	derived, cancel := context.WithCancel(ctx)
-	defer cancel()
+	derived, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 
 	// Buffered to len(approvers) so cancelled goroutines never block on send.
 	ch := make(chan approvalResult, len(m.approvers))
 	for _, a := range m.approvers {
 		a := a
 		go func() {
-			approved, err := a.RequestApproval(derived, action)
-			ch <- approvalResult{approved: approved, err: err}
+			approval, err := a.RequestApproval(derived, action)
+			ch <- approvalResult{approval: approval, err: err}
 		}()
 	}
 
@@ -55,10 +79,11 @@ func (m *MultiApprover) RequestApproval(ctx context.Context, action string) (boo
 			lastErr = r.err
 			continue
 		}
-		// First channel to return a clean decision wins; cancel the rest.
-		cancel()
-		return r.approved, nil
+		// First clean decision wins; cancel the rest with the winning decision
+		// as the cause so they can render "Approved/Denied on <channel>".
+		cancel(&handledElsewhereError{winner: r.approval})
+		return r.approval, nil
 	}
 
-	return false, fmt.Errorf("all approval channels failed: %w", lastErr)
+	return Approval{}, fmt.Errorf("all approval channels failed: %w", lastErr)
 }

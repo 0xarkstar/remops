@@ -798,8 +798,8 @@ type stubApprover struct {
 	err      error
 }
 
-func (a *stubApprover) RequestApproval(_ context.Context, _ string) (bool, error) {
-	return a.approved, a.err
+func (a *stubApprover) RequestApproval(_ context.Context, _ string) (security.Approval, error) {
+	return security.Approval{Approved: a.approved, Via: "stub"}, a.err
 }
 
 func TestServiceAction_ApproverDenied_Returns403(t *testing.T) {

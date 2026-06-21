@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,21 +34,22 @@ func NewTelegramApprover(botToken, chatID string) *TelegramApprover {
 
 // RequestApproval sends a Telegram message with Approve/Deny buttons and polls for a response.
 // It blocks until the user responds or ctx is cancelled.
-func (t *TelegramApprover) RequestApproval(ctx context.Context, action string) (bool, error) {
+func (t *TelegramApprover) RequestApproval(ctx context.Context, action string) (Approval, error) {
 	uuid, err := generateUUID()
 	if err != nil {
-		return false, fmt.Errorf("generate approval uuid: %w", err)
+		return Approval{}, fmt.Errorf("generate approval uuid: %w", err)
 	}
 
 	msgID, err := t.sendApprovalMessage(action, uuid)
 	if err != nil {
-		return false, fmt.Errorf("send approval message: %w", err)
+		return Approval{}, fmt.Errorf("send approval message: %w", err)
 	}
 
-	approved, err := t.pollForCallback(ctx, uuid)
+	approved, by, err := t.pollForCallback(ctx, uuid)
 	if err != nil {
-		_ = t.editMessage(msgID, fmt.Sprintf("⏰ Expired: %s", action))
-		return false, err
+		// Distinguish "another channel handled it" from "timed out".
+		_ = t.editMessage(msgID, cancellationMessage(ctx, action))
+		return Approval{}, err
 	}
 
 	status := "✅ Approved"
@@ -55,7 +57,7 @@ func (t *TelegramApprover) RequestApproval(ctx context.Context, action string) (
 		status = "❌ Denied"
 	}
 	_ = t.editMessage(msgID, fmt.Sprintf("%s: %s", status, action))
-	return approved, nil
+	return Approval{Approved: approved, By: by, Via: "telegram"}, nil
 }
 
 func generateUUID() (string, error) {
@@ -108,17 +110,21 @@ type tgUpdate struct {
 	CallbackQuery *struct {
 		ID   string `json:"id"`
 		Data string `json:"data"`
+		From struct {
+			ID       int64  `json:"id"`
+			Username string `json:"username"`
+		} `json:"from"`
 	} `json:"callback_query"`
 }
 
 // pollForCallback polls getUpdates every 2s until a callback matching uuid is found.
-func (t *TelegramApprover) pollForCallback(ctx context.Context, uuid string) (bool, error) {
+func (t *TelegramApprover) pollForCallback(ctx context.Context, uuid string) (approved bool, by string, err error) {
 	var offset int64
 
 	for {
 		select {
 		case <-ctx.Done():
-			return false, fmt.Errorf("approval timed out: %w", ctx.Err())
+			return false, "", fmt.Errorf("approval timed out: %w", ctx.Err())
 		default:
 		}
 
@@ -127,7 +133,7 @@ func (t *TelegramApprover) pollForCallback(ctx context.Context, uuid string) (bo
 			// On network error, wait and retry.
 			select {
 			case <-ctx.Done():
-				return false, fmt.Errorf("approval timed out: %w", ctx.Err())
+				return false, "", fmt.Errorf("approval timed out: %w", ctx.Err())
 			case <-time.After(2 * time.Second):
 				continue
 			}
@@ -143,12 +149,12 @@ func (t *TelegramApprover) pollForCallback(ctx context.Context, uuid string) (bo
 				continue
 			}
 			_ = t.answerCallbackQuery(u.CallbackQuery.ID)
-			return parts[0] == "approve", nil
+			return parts[0] == "approve", strconv.FormatInt(u.CallbackQuery.From.ID, 10), nil
 		}
 
 		select {
 		case <-ctx.Done():
-			return false, fmt.Errorf("approval timed out: %w", ctx.Err())
+			return false, "", fmt.Errorf("approval timed out: %w", ctx.Err())
 		case <-time.After(2 * time.Second):
 		}
 	}

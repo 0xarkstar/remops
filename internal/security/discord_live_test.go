@@ -35,9 +35,9 @@ func TestDiscordLiveButtonApproval(t *testing.T) {
 	defer cancel()
 
 	t.Log("Posting approval message — click ✅ Approve or ❌ Deny in Discord…")
-	approved, err := d.RequestApproval(ctx, "remops e2e button test (2026-06-21)")
+	approval, err := d.RequestApproval(ctx, "remops e2e button test (2026-06-21)")
 	if err != nil {
 		t.Fatalf("RequestApproval failed: %v", err)
 	}
-	t.Logf("LIVE RESULT: approved=%v", approved)
+	t.Logf("LIVE RESULT: approved=%v by=%s via=%s", approval.Approved, approval.By, approval.Via)
 }

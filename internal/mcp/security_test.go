@@ -16,8 +16,8 @@ type mockApprover struct {
 	err      error
 }
 
-func (m *mockApprover) RequestApproval(_ context.Context, _ string) (bool, error) {
-	return m.approved, m.err
+func (m *mockApprover) RequestApproval(_ context.Context, _ string) (security.Approval, error) {
+	return security.Approval{Approved: m.approved, Via: "mock"}, m.err
 }
 
 func securityTestConfig() *config.Config {
