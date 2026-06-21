@@ -1,56 +1,48 @@
 package security
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"time"
+	"strings"
+	"sync"
+
+	"github.com/bwmarrin/discordgo"
 )
 
-const discordAPIBase = "https://discord.com/api/v10"
-
-// Approval reaction emojis. The bot seeds both so the operator can approve or
-// deny with a single tap; a reaction by an authorized non-bot user decides.
+// Custom ID prefixes for the approval buttons. The full custom_id is
+// "<action>:<nonce>" so concurrent approval requests don't collide.
 const (
-	discordApproveEmoji = "✅"
-	discordDenyEmoji    = "❌"
+	discordApproveAction = "approve"
+	discordDenyAction    = "deny"
 )
 
-// maxErrBodyLen bounds how much of an upstream response body is echoed into an
-// error, so a large or sensitive body cannot flood logs or the caller.
-const maxErrBodyLen = 256
-
-// DiscordApprover implements Approver using the Discord Bot REST API.
+// DiscordApprover implements Approver using Discord message-component buttons
+// over a gateway (websocket) connection.
 //
-// It posts an approval message to a channel, seeds ✅/❌ reactions, and polls
-// the message's reactions until an authorized non-bot user reacts. This mirrors
-// the Telegram getUpdates polling model — no public webhook endpoint or gateway
-// connection is required.
+// It posts an approval message with ✅/❌ buttons, then blocks until an
+// authorized user clicks one. Button interactions carry a Discord-verified user
+// id, so — unlike reaction polling — there is no ambiguity about who acted, no
+// pagination window, and no way for the bot's own action to be counted.
 //
-// Security posture (fail closed):
-//   - The bot's own identity is resolved authoritatively via GET /users/@me
-//     (the same identity that performs the @me seed reaction), so the seeded
-//     reaction is never mistaken for an operator's.
-//   - When allowedUserIDs is non-empty, only those user ids may approve/deny;
-//     otherwise any non-bot human reaction decides (intended for a private,
-//     operator-only channel).
-//   - Deny is evaluated before approve, and an approve is honored only when the
-//     deny lookup also succeeded — a failing deny lookup can never let an
-//     approve through.
+// The gateway connection is outbound only (no public inbound endpoint), so it
+// works behind NAT/Tailscale on OCI. It is opened lazily on first use and kept
+// open for the approver's lifetime.
+//
+// Security posture (fail closed): an unauthorized clicker is rejected (and the
+// request keeps waiting); ctx cancel/timeout returns (false, err); when
+// allowedUserIDs is non-empty only those users may decide.
 type DiscordApprover struct {
 	botToken       string
 	channelID      string
 	allowedUserIDs map[string]bool
-	client         *http.Client
+
+	mu      sync.Mutex
+	session *discordgo.Session
+	pending map[string]chan bool // nonce -> result channel
 }
 
 // NewDiscordApprover creates a DiscordApprover for the given bot token and
-// channel. If allowedUserIDs are provided, only reactions from those user ids
-// count as operator decisions.
+// channel. If allowedUserIDs are provided, only those users may approve/deny.
 func NewDiscordApprover(botToken, channelID string, allowedUserIDs ...string) *DiscordApprover {
 	allow := make(map[string]bool, len(allowedUserIDs))
 	for _, id := range allowedUserIDs {
@@ -62,201 +54,200 @@ func NewDiscordApprover(botToken, channelID string, allowedUserIDs ...string) *D
 		botToken:       botToken,
 		channelID:      channelID,
 		allowedUserIDs: allow,
-		client:         &http.Client{Timeout: 35 * time.Second},
+		pending:        make(map[string]chan bool),
 	}
 }
 
-// RequestApproval posts an approval message with ✅/❌ reactions and blocks
-// until an authorized non-bot user reacts or ctx is cancelled.
+// RequestApproval posts an approval message with ✅/❌ buttons and blocks until
+// an authorized user clicks one or ctx is cancelled.
 func (d *DiscordApprover) RequestApproval(ctx context.Context, action string) (bool, error) {
-	// Resolve the bot's own user id from the authenticated token — the SAME
-	// identity that seeds the @me reactions. Fail closed if it cannot be
-	// determined, otherwise the bot's own ✅ could be read as approval.
-	botUserID, err := d.botUserID(ctx)
+	session, err := d.ensureSession()
 	if err != nil {
-		return false, fmt.Errorf("discord approval: resolve bot identity: %w", err)
-	}
-	if botUserID == "" {
-		return false, fmt.Errorf("discord approval: empty bot identity; failing closed")
+		return false, err
 	}
 
-	msgID, err := d.sendApprovalMessage(ctx, action)
+	nonce, err := generateUUID() // shared helper (telegram.go)
+	if err != nil {
+		return false, fmt.Errorf("approval nonce: %w", err)
+	}
+
+	resultCh := make(chan bool, 1)
+	d.mu.Lock()
+	d.pending[nonce] = resultCh
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		delete(d.pending, nonce)
+		d.mu.Unlock()
+	}()
+
+	msg, err := session.ChannelMessageSendComplex(d.channelID, &discordgo.MessageSend{
+		Content:    fmt.Sprintf("🔐 Approval required\n\nAction: %s", action),
+		Components: approvalButtons(nonce),
+	})
 	if err != nil {
 		return false, fmt.Errorf("send approval message: %w", err)
 	}
 
-	if err := d.addReaction(ctx, msgID, discordApproveEmoji); err != nil {
-		return false, fmt.Errorf("seed approve reaction: %w", err)
+	select {
+	case approved := <-resultCh:
+		return approved, nil
+	case <-ctx.Done():
+		d.disableButtons(session, msg.ID, fmt.Sprintf("⏰ Expired / handled elsewhere: %s", action))
+		return false, fmt.Errorf("approval timed out: %w", ctx.Err())
 	}
-	if err := d.addReaction(ctx, msgID, discordDenyEmoji); err != nil {
-		return false, fmt.Errorf("seed deny reaction: %w", err)
+}
+
+// ensureSession lazily opens the gateway connection and registers the
+// interaction handler. Safe for concurrent callers.
+func (d *DiscordApprover) ensureSession() (*discordgo.Session, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.session != nil {
+		return d.session, nil
 	}
 
-	approved, err := d.pollForReaction(ctx, msgID, botUserID)
+	s, err := discordgo.New("Bot " + d.botToken)
 	if err != nil {
-		// ctx is likely cancelled here; edit with a fresh context.
-		_ = d.editMessage(context.Background(), msgID, fmt.Sprintf("⏰ Expired: %s", action))
-		return false, err
+		return nil, fmt.Errorf("discord session: %w", err)
 	}
-
-	status := "✅ Approved"
-	if !approved {
-		status = "❌ Denied"
+	// Component interactions are delivered without privileged intents; Guilds
+	// is the minimal scope needed for the gateway connection.
+	s.Identify.Intents = discordgo.IntentsGuilds
+	s.AddHandler(d.onInteraction)
+	if err := s.Open(); err != nil {
+		return nil, fmt.Errorf("discord gateway open: %w", err)
 	}
-	_ = d.editMessage(context.Background(), msgID, fmt.Sprintf("%s: %s", status, action))
-	return approved, nil
+	d.session = s
+	return s, nil
 }
 
-// botUserID returns the bot account's own user id via GET /users/@me.
-func (d *DiscordApprover) botUserID(ctx context.Context) (string, error) {
-	var me struct {
-		ID string `json:"id"`
-	}
-	if err := d.do(ctx, http.MethodGet, "/users/@me", nil, &me); err != nil {
-		return "", err
-	}
-	return me.ID, nil
-}
-
-// sendApprovalMessage posts the approval prompt and returns the message id.
-func (d *DiscordApprover) sendApprovalMessage(ctx context.Context, action string) (string, error) {
-	payload := map[string]any{
-		"content": fmt.Sprintf("🔐 Approval required\n\nAction: %s\n\nReact ✅ to approve or ❌ to deny.", action),
-	}
-	var resp struct {
-		ID string `json:"id"`
-	}
-	path := fmt.Sprintf("/channels/%s/messages", d.channelID)
-	if err := d.do(ctx, http.MethodPost, path, payload, &resp); err != nil {
-		return "", err
-	}
-	return resp.ID, nil
-}
-
-// addReaction seeds a bot reaction on the message so the operator can tap it.
-func (d *DiscordApprover) addReaction(ctx context.Context, msgID, emoji string) error {
-	path := fmt.Sprintf("/channels/%s/messages/%s/reactions/%s/@me",
-		d.channelID, msgID, url.PathEscape(emoji))
-	return d.do(ctx, http.MethodPut, path, nil, nil)
-}
-
-type discordUser struct {
-	ID  string `json:"id"`
-	Bot bool   `json:"bot"`
-}
-
-// getReactionUsers returns the users who reacted with emoji (first page, up to 100).
-func (d *DiscordApprover) getReactionUsers(ctx context.Context, msgID, emoji string) ([]discordUser, error) {
-	path := fmt.Sprintf("/channels/%s/messages/%s/reactions/%s?limit=100",
-		d.channelID, msgID, url.PathEscape(emoji))
-	var users []discordUser
-	if err := d.do(ctx, http.MethodGet, path, nil, &users); err != nil {
-		return nil, err
-	}
-	return users, nil
-}
-
-// pollForReaction polls reaction state every 2s until an authorized human reacts.
-//
-// Deny is evaluated before approve so a deny dominates a simultaneous tie, and
-// an approve is honored only when the deny lookup ALSO succeeded — a failing or
-// suppressed deny lookup can never let an approve through.
-func (d *DiscordApprover) pollForReaction(ctx context.Context, msgID, botUserID string) (bool, error) {
-	for {
-		select {
-		case <-ctx.Done():
-			return false, fmt.Errorf("approval timed out: %w", ctx.Err())
-		default:
-		}
-
-		denyUsers, denyErr := d.getReactionUsers(ctx, msgID, discordDenyEmoji)
-		if denyErr == nil && d.reactedByOperator(denyUsers, botUserID) {
-			return false, nil
-		}
-		approveUsers, approveErr := d.getReactionUsers(ctx, msgID, discordApproveEmoji)
-		if denyErr == nil && approveErr == nil && d.reactedByOperator(approveUsers, botUserID) {
-			return true, nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return false, fmt.Errorf("approval timed out: %w", ctx.Err())
-		case <-time.After(2 * time.Second):
-		}
-	}
-}
-
-// reactedByOperator reports whether any reacting user is an authorized operator:
-// not the bot account, not flagged as a bot, and (when an allowlist is set) in it.
-func (d *DiscordApprover) reactedByOperator(users []discordUser, botUserID string) bool {
-	for _, u := range users {
-		if u.ID == botUserID || u.Bot {
-			continue
-		}
-		if len(d.allowedUserIDs) > 0 && !d.allowedUserIDs[u.ID] {
-			continue
-		}
-		return true
-	}
-	return false
-}
-
-// editMessage replaces the content of a previously posted message.
-func (d *DiscordApprover) editMessage(ctx context.Context, msgID, content string) error {
-	path := fmt.Sprintf("/channels/%s/messages/%s", d.channelID, msgID)
-	return d.do(ctx, http.MethodPatch, path, map[string]any{"content": content}, nil)
-}
-
-// do executes a Discord REST request with bot authentication. A non-2xx
-// response is returned as an error with a bounded snippet of the body. out,
-// when non-nil, receives the decoded JSON body.
-func (d *DiscordApprover) do(ctx context.Context, method, path string, body, out any) error {
-	var reader io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("marshal %s body: %w", path, err)
-		}
-		reader = bytes.NewReader(b)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, discordAPIBase+path, reader)
-	if err != nil {
-		return fmt.Errorf("build %s request: %w", path, err)
-	}
-	req.Header.Set("Authorization", "Bot "+d.botToken)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", method, path, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read %s response: %w", path, err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("discord %s %s: status %d: %s", method, path, resp.StatusCode, truncateForError(respBody))
-	}
-
-	if out != nil && len(respBody) > 0 {
-		if err := json.Unmarshal(respBody, out); err != nil {
-			return fmt.Errorf("decode %s response: %w", path, err)
-		}
+// Close shuts down the gateway connection if one is open.
+func (d *DiscordApprover) Close() error {
+	d.mu.Lock()
+	s := d.session
+	d.session = nil
+	d.mu.Unlock()
+	if s != nil {
+		return s.Close()
 	}
 	return nil
 }
 
-// truncateForError bounds an upstream body to a short snippet for safe inclusion
-// in error messages.
-func truncateForError(b []byte) string {
-	if len(b) <= maxErrBodyLen {
-		return string(b)
+// onInteraction handles button clicks, validates the clicker, acknowledges the
+// interaction, and resolves the matching pending request.
+func (d *DiscordApprover) onInteraction(s *discordgo.Session, ic *discordgo.InteractionCreate) {
+	if ic.Type != discordgo.InteractionMessageComponent {
+		return
 	}
-	return string(b[:maxErrBodyLen]) + "…(truncated)"
+	action, nonce, ok := parseCustomID(ic.MessageComponentData().CustomID)
+	if !ok {
+		return
+	}
+
+	d.mu.Lock()
+	resultCh, known := d.pending[nonce]
+	d.mu.Unlock()
+	if !known {
+		return // stale or unknown request
+	}
+
+	clicker := interactionUserID(ic)
+	if !authorizedClicker(clicker, d.allowedUserIDs) {
+		_ = s.InteractionRespond(ic.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Flags:   discordgo.MessageFlagsEphemeral,
+				Content: "You are not authorized to approve this action.",
+			},
+		})
+		return // do NOT resolve — keep waiting for an authorized decision
+	}
+
+	approved := action == discordApproveAction
+	verdict := "✅ Approved"
+	if !approved {
+		verdict = "❌ Denied"
+	}
+	// Acknowledge by replacing the message and removing the buttons.
+	_ = s.InteractionRespond(ic.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Content:    fmt.Sprintf("%s by <@%s>", verdict, clicker),
+			Components: []discordgo.MessageComponent{},
+		},
+	})
+
+	d.mu.Lock()
+	delete(d.pending, nonce)
+	d.mu.Unlock()
+	resultCh <- approved // buffered; never blocks
+}
+
+// disableButtons edits a message to remove its buttons and set final text.
+// Best-effort: errors are ignored (the request is already resolving).
+func (d *DiscordApprover) disableButtons(s *discordgo.Session, msgID, content string) {
+	empty := []discordgo.MessageComponent{}
+	_, _ = s.ChannelMessageEditComplex(&discordgo.MessageEdit{
+		Channel:    d.channelID,
+		ID:         msgID,
+		Content:    &content,
+		Components: &empty,
+	})
+}
+
+// approvalButtons builds the ✅/❌ action row for a given nonce.
+func approvalButtons(nonce string) []discordgo.MessageComponent {
+	return []discordgo.MessageComponent{
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{
+				Label:    "✅ Approve",
+				Style:    discordgo.SuccessButton,
+				CustomID: discordApproveAction + ":" + nonce,
+			},
+			discordgo.Button{
+				Label:    "❌ Deny",
+				Style:    discordgo.DangerButton,
+				CustomID: discordDenyAction + ":" + nonce,
+			},
+		}},
+	}
+}
+
+// parseCustomID splits "approve:<nonce>" / "deny:<nonce>" into its parts.
+func parseCustomID(customID string) (action, nonce string, ok bool) {
+	for _, a := range []string{discordApproveAction, discordDenyAction} {
+		prefix := a + ":"
+		if strings.HasPrefix(customID, prefix) {
+			n := customID[len(prefix):]
+			if n == "" {
+				return "", "", false
+			}
+			return a, n, true
+		}
+	}
+	return "", "", false
+}
+
+// authorizedClicker reports whether a clicker may decide: a non-empty id, and
+// (when an allowlist is set) a member of it.
+func authorizedClicker(clickerID string, allowed map[string]bool) bool {
+	if clickerID == "" {
+		return false
+	}
+	if len(allowed) == 0 {
+		return true
+	}
+	return allowed[clickerID]
+}
+
+// interactionUserID extracts the acting user's id from a guild or DM interaction.
+func interactionUserID(ic *discordgo.InteractionCreate) string {
+	if ic.Member != nil && ic.Member.User != nil {
+		return ic.Member.User.ID
+	}
+	if ic.User != nil {
+		return ic.User.ID
+	}
+	return ""
 }

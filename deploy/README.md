@@ -65,7 +65,11 @@ ssh oci '/path/to/remops-bin --version'   # expect the git sha you built
 
 ## Discord approver setup (one-time)
 
-The Discord bot needs, in the approval channel: **View Channel**, **Send
-Messages**, **Add Reactions**, and **Read Message History**. It posts an
-approval message, seeds ✅/❌ reactions, and polls reactions — no public
-webhook or gateway connection is required.
+Add the bot to the server with the `bot` scope; in the approval channel it needs
+**View Channel** and **Send Messages**. It posts an approval message with ✅/❌
+**buttons** and receives clicks over an **outbound gateway** (websocket)
+connection — no Add Reactions, Read Message History, public webhook, or inbound
+endpoint required (works behind NAT/Tailscale on OCI).
+
+Set `discord.allowed_user_ids` to the operator's Discord user id(s) so only they
+can decide; an empty list lets any non-bot member of the channel approve.

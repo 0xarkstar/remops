@@ -3,8 +3,10 @@ module github.com/0xarkstar/remops
 go 1.26.1
 
 require (
+	github.com/bwmarrin/discordgo v0.29.0
 	github.com/fatih/color v1.18.0
 	github.com/gliderlabs/ssh v0.3.8
+	github.com/kevinburke/ssh_config v1.6.0
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/crypto v0.49.0
 	golang.org/x/term v0.41.0
@@ -13,8 +15,8 @@ require (
 
 require (
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
+	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
