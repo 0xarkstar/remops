@@ -46,14 +46,14 @@ install-local:
 	@echo "personal@dev: ensure ~/.config/remops/remops.yaml has NO 'approval:' section."
 
 ## deploy-oci: cross-compile for OCI (linux/arm64) and copy the fleet binary.
-## Restart is NOT automated: restarting Hermes risks disrupting co-located
-## services (bluenode). See deploy/README.md for the deliberate restart path.
+## Reload is a deliberate, human step: send `/reload-mcp` in a Hermes channel to
+## hot-reload the MCP subprocess (no gateway restart, bluenode unaffected).
 deploy-oci:
 	mkdir -p dist
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-linux-arm64 .
 	scp dist/$(BINARY)-linux-arm64 $(OCI_HOST):$(OCI_BIN)
 	@echo "Copied $(BINARY) $(VERSION) -> $(OCI_HOST):$(OCI_BIN)"
-	@echo "Now restart the MCP deliberately (see deploy/README.md) — do NOT blind-restart Hermes."
+	@echo "Now send '/reload-mcp' in a Hermes channel to hot-reload (no gateway restart). See deploy/README.md."
 
 ## clean: remove build artifacts
 clean:

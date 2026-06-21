@@ -53,16 +53,30 @@ make deploy-oci OCI_HOST=oci OCI_BIN=/path/to/remops-bin
 
 This cross-compiles `linux/arm64` (Graviton), copies the binary, and stops.
 
-### Restart (deliberate — open operational gap)
+### Reload (no gateway restart)
 
-The OCI remops runs as a Hermes subprocess, so a new binary only takes effect
-when the MCP is reloaded. **Do not blind-restart Hermes** — co-located services
-(e.g. bluenode) can be disrupted. Prefer reloading only the remops MCP. Confirm
-the live version after restart:
+The OCI remops runs as a Hermes (NousResearch hermes-agent) MCP subprocess, so a
+new binary only takes effect when the MCP is reloaded. **Do not restart the
+Hermes gateway** — co-located agents/profiles (e.g. bluenode) would restart too.
+
+Hermes already supports a hot reload that re-spawns only the MCP subprocesses,
+leaving the gateway running: in any Hermes channel send
+
+```
+/reload-mcp
+```
+
+(`gateway/run.py` `_handle_reload_mcp_command` → `shutdown_mcp_servers()` +
+`discover_mcp_tools()`). There is a brief blip while all MCP servers re-spawn,
+but the gateway, in-flight agents, and bluenode keep running. Confirm the live
+version afterward:
 
 ```bash
-ssh oci '/path/to/remops-bin --version'   # expect the git sha you built
+ssh oci '<remops-bin path> --version'   # expect the git sha you built
 ```
+
+A full, drain-aware gateway restart (heavier — restarts bluenode too) is
+available via `SIGUSR1` to the gateway pid if ever needed; prefer `/reload-mcp`.
 
 ## Discord approver setup (one-time)
 
