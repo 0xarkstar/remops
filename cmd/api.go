@@ -40,10 +40,8 @@ Requires api.api_key in config.`,
 			api.WithVersion(buildVersion),
 		}
 
-		if cfg.Approval != nil && cfg.Approval.Method == "telegram" {
-			opts = append(opts, api.WithApprover(
-				security.NewTelegramApprover(cfg.Approval.BotToken, cfg.Approval.ChatID),
-			))
+		if approver, ok := buildApprover(cfg.Approval); ok {
+			opts = append(opts, api.WithApprover(approver))
 		}
 
 		if cfg.Approval != nil && cfg.Approval.RateLimit != nil {

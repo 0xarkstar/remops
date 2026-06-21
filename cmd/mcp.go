@@ -41,10 +41,8 @@ All logging goes to stderr. Do not run interactively.`,
 			mcp.WithVersion(buildVersion),
 		}
 
-		if cfg.Approval != nil && cfg.Approval.Method == "telegram" {
-			opts = append(opts, mcp.WithApprover(
-				security.NewTelegramApprover(cfg.Approval.BotToken, cfg.Approval.ChatID),
-			))
+		if approver, ok := buildApprover(cfg.Approval); ok {
+			opts = append(opts, mcp.WithApprover(approver))
 		}
 
 		if cfg.Approval != nil && cfg.Approval.RateLimit != nil {

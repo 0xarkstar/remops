@@ -149,6 +149,7 @@ func (s *Server) handleServiceAction(action string) http.HandlerFunc {
 		}
 
 		// Approval flow.
+		var approverID, approverVia string
 		if s.approver != nil {
 			timeout := 5 * time.Minute
 			if s.config.Approval != nil {
@@ -157,15 +158,16 @@ func (s *Server) handleServiceAction(action string) http.HandlerFunc {
 			approvalCtx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
 			desc := fmt.Sprintf("HTTP API: %s service %s on %s", action, name, svc.Host)
-			approved, err := s.approver.RequestApproval(approvalCtx, desc)
+			decision, err := s.approver.RequestApproval(approvalCtx, desc)
 			if err != nil {
 				jsonError(w, http.StatusGatewayTimeout, fmt.Sprintf("approval request failed: %v", err))
 				return
 			}
-			if !approved {
+			if !decision.Approved {
 				jsonError(w, http.StatusForbidden, "operation denied by approver")
 				return
 			}
+			approverID, approverVia = decision.By, decision.Via
 		}
 
 		// Rate limiting.
@@ -190,11 +192,13 @@ func (s *Server) handleServiceAction(action string) http.HandlerFunc {
 		}
 		if s.auditLogger != nil {
 			if err := s.auditLogger.Log(security.AuditEntry{
-				Command: action,
-				Host:    svc.Host,
-				Service: name,
-				Profile: profile.String(),
-				Result:  "success",
+				Command:  action,
+				Host:     svc.Host,
+				Service:  name,
+				Profile:  profile.String(),
+				Result:   "success",
+				Approver: approverID,
+				Channel:  approverVia,
 			}); err != nil {
 				fmt.Fprintf(os.Stderr, "api: audit log: %v\n", err)
 			}
@@ -296,6 +300,7 @@ func (s *Server) handleHostExec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Tiered permission: admin bypasses, operator gets tiered access.
+	var approverID, approverVia string
 	if profile < config.LevelAdmin {
 		if err := security.CheckPermission(profile, config.LevelOperator); err != nil {
 			jsonError(w, http.StatusForbidden, err.Error())
@@ -313,24 +318,27 @@ func (s *Server) handleHostExec(w http.ResponseWriter, r *http.Request) {
 			approvalCtx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
 			desc := fmt.Sprintf("HTTP API host_exec on %s: %s", name, body.Command)
-			approved, err := s.approver.RequestApproval(approvalCtx, desc)
+			decision, err := s.approver.RequestApproval(approvalCtx, desc)
 			if err != nil {
 				jsonError(w, http.StatusGatewayTimeout, fmt.Sprintf("approval request failed: %v", err))
 				return
 			}
-			if !approved {
+			if !decision.Approved {
 				jsonError(w, http.StatusForbidden, "command denied by approver")
 				return
 			}
+			approverID, approverVia = decision.By, decision.Via
 		}
 	}
 
 	if s.auditLogger != nil {
 		if err := s.auditLogger.Log(security.AuditEntry{
-			Command: body.Command,
-			Host:    name,
-			Profile: profile.String(),
-			Result:  "exec",
+			Command:  body.Command,
+			Host:     name,
+			Profile:  profile.String(),
+			Result:   "exec",
+			Approver: approverID,
+			Channel:  approverVia,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "api: audit log: %v\n", err)
 		}
@@ -548,6 +556,7 @@ func (s *Server) handleStackAction(action string) http.HandlerFunc {
 			return
 		}
 
+		var approverID, approverVia string
 		if s.approver != nil {
 			timeout := 5 * time.Minute
 			if s.config.Approval != nil {
@@ -556,15 +565,16 @@ func (s *Server) handleStackAction(action string) http.HandlerFunc {
 			approvalCtx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
 			desc := fmt.Sprintf("HTTP API: compose %s stack %s on %s", action, name, stack.Host)
-			approved, err := s.approver.RequestApproval(approvalCtx, desc)
+			decision, err := s.approver.RequestApproval(approvalCtx, desc)
 			if err != nil {
 				jsonError(w, http.StatusGatewayTimeout, fmt.Sprintf("approval request failed: %v", err))
 				return
 			}
-			if !approved {
+			if !decision.Approved {
 				jsonError(w, http.StatusForbidden, "operation denied by approver")
 				return
 			}
+			approverID, approverVia = decision.By, decision.Via
 		}
 
 		dc := docker.NewDockerClient(s.transport)
@@ -576,10 +586,12 @@ func (s *Server) handleStackAction(action string) http.HandlerFunc {
 
 		if s.auditLogger != nil {
 			if err := s.auditLogger.Log(security.AuditEntry{
-				Command: "compose " + action,
-				Host:    stack.Host,
-				Profile: profile.String(),
-				Result:  "success",
+				Command:  "compose " + action,
+				Host:     stack.Host,
+				Profile:  profile.String(),
+				Result:   "success",
+				Approver: approverID,
+				Channel:  approverVia,
 			}); err != nil {
 				fmt.Fprintf(os.Stderr, "api: audit log: %v\n", err)
 			}

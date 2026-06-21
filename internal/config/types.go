@@ -126,12 +126,59 @@ func (p PermissionLevel) String() string {
 }
 
 // ApprovalConfig defines out-of-band approval settings.
+//
+// Method selects the approval channel:
+//   - "telegram": single Telegram approver (flat bot_token/chat_id, or nested telegram block)
+//   - "discord":  single Discord approver (nested discord block)
+//   - "multi":    fan out to both Telegram and Discord; the first responder wins
+//
+// The flat BotToken/ChatID fields are retained for Telegram backward compatibility.
 type ApprovalConfig struct {
-	Method    string           `yaml:"method"`
-	BotToken  string           `yaml:"bot_token"`
-	ChatID    string           `yaml:"chat_id"`
-	Timeout   string           `yaml:"timeout,omitempty"`
-	RateLimit *RateLimitConfig `yaml:"rate_limit,omitempty"`
+	Method    string                  `yaml:"method"`
+	BotToken  string                  `yaml:"bot_token,omitempty"`
+	ChatID    string                  `yaml:"chat_id,omitempty"`
+	Telegram  *TelegramApprovalConfig `yaml:"telegram,omitempty"`
+	Discord   *DiscordApprovalConfig  `yaml:"discord,omitempty"`
+	Timeout   string                  `yaml:"timeout,omitempty"`
+	RateLimit *RateLimitConfig        `yaml:"rate_limit,omitempty"`
+}
+
+// TelegramApprovalConfig holds Telegram-specific approval settings.
+type TelegramApprovalConfig struct {
+	BotToken string `yaml:"bot_token"`
+	ChatID   string `yaml:"chat_id"`
+}
+
+// DiscordApprovalConfig holds Discord-specific approval settings.
+//
+// AllowedUserIDs, when set, restricts which Discord user ids may approve/deny.
+// Leave empty only for a private, operator-only channel.
+type DiscordApprovalConfig struct {
+	BotToken       string   `yaml:"bot_token"`
+	ChannelID      string   `yaml:"channel_id"`
+	AllowedUserIDs []string `yaml:"allowed_user_ids,omitempty"`
+}
+
+// EffectiveTelegram resolves Telegram credentials, preferring the nested
+// telegram block and falling back to the flat bot_token/chat_id fields.
+// ok is false when no Telegram credentials are configured.
+func (a *ApprovalConfig) EffectiveTelegram() (botToken, chatID string, ok bool) {
+	if a.Telegram != nil && a.Telegram.BotToken != "" {
+		return a.Telegram.BotToken, a.Telegram.ChatID, true
+	}
+	if a.BotToken != "" {
+		return a.BotToken, a.ChatID, true
+	}
+	return "", "", false
+}
+
+// EffectiveDiscord resolves Discord credentials from the nested discord block.
+// ok is false when no Discord credentials are configured.
+func (a *ApprovalConfig) EffectiveDiscord() (botToken, channelID string, ok bool) {
+	if a.Discord != nil && a.Discord.BotToken != "" {
+		return a.Discord.BotToken, a.Discord.ChannelID, true
+	}
+	return "", "", false
 }
 
 // EffectiveTimeout returns the approval timeout, defaulting to 5m.

@@ -117,12 +117,9 @@ func validate(cfg *Config) error {
 		}
 	}
 
-	if cfg.Approval != nil && cfg.Approval.Method == "telegram" {
-		if cfg.Approval.BotToken == "" {
-			return fmt.Errorf("approval: telegram method requires non-empty bot_token")
-		}
-		if cfg.Approval.ChatID == "" {
-			return fmt.Errorf("approval: telegram method requires non-empty chat_id")
+	if cfg.Approval != nil {
+		if err := validateApproval(cfg.Approval); err != nil {
+			return err
 		}
 	}
 
@@ -155,6 +152,55 @@ func validate(cfg *Config) error {
 		}
 	}
 
+	return nil
+}
+
+// validateApproval checks that the configured approval method has the
+// credentials it needs. telegram/discord require their respective channel;
+// multi requires both.
+func validateApproval(a *ApprovalConfig) error {
+	switch a.Method {
+	case "telegram":
+		token, chatID, _ := a.EffectiveTelegram()
+		if token == "" {
+			return fmt.Errorf("approval: telegram method requires non-empty bot_token")
+		}
+		if chatID == "" {
+			return fmt.Errorf("approval: telegram method requires non-empty chat_id")
+		}
+	case "discord":
+		if _, channelID, ok := a.EffectiveDiscord(); !ok || channelID == "" {
+			return fmt.Errorf("approval: discord method requires discord.bot_token and discord.channel_id")
+		}
+		if err := requireDiscordAllowlist(a); err != nil {
+			return err
+		}
+	case "multi":
+		if _, chatID, ok := a.EffectiveTelegram(); !ok || chatID == "" {
+			return fmt.Errorf("approval: multi method requires telegram bot_token and chat_id")
+		}
+		if _, channelID, ok := a.EffectiveDiscord(); !ok || channelID == "" {
+			return fmt.Errorf("approval: multi method requires discord.bot_token and discord.channel_id")
+		}
+		if err := requireDiscordAllowlist(a); err != nil {
+			return err
+		}
+	case "":
+		return fmt.Errorf("approval: method is required (telegram, discord, or multi)")
+	default:
+		return fmt.Errorf("approval: unsupported method %q (must be telegram, discord, or multi)", a.Method)
+	}
+	return nil
+}
+
+// requireDiscordAllowlist enforces a non-empty discord.allowed_user_ids.
+// Discord channel membership is mutable and not a remops-controlled boundary,
+// so the set of users who may approve must be pinned explicitly in config.
+func requireDiscordAllowlist(a *ApprovalConfig) error {
+	if a.Discord == nil || len(a.Discord.AllowedUserIDs) == 0 {
+		return fmt.Errorf("approval: discord requires discord.allowed_user_ids " +
+			"(channel membership is not a sufficient authorization boundary)")
+	}
 	return nil
 }
 

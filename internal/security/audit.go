@@ -19,6 +19,8 @@ type AuditEntry struct {
 	Service   string `json:"service,omitempty"`
 	Profile   string `json:"profile"`
 	Result    string `json:"result"` // "success", "denied", "error", "approved", "denied_approval"
+	Approver  string `json:"approver,omitempty"` // approver identity when the action was gated
+	Channel   string `json:"channel,omitempty"`  // approval channel: "telegram" | "discord"
 	Duration  int64  `json:"duration_ms,omitempty"`
 	Error     string `json:"error,omitempty"`
 }

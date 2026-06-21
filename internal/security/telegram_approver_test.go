@@ -38,7 +38,7 @@ func TestPollForCallbackCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled
 
-	_, err := ta.pollForCallback(ctx, "someuuid")
+	_, _, err := ta.pollForCallback(ctx, "someuuid")
 	if err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
 	}
@@ -105,7 +105,7 @@ func TestRequestApprovalApproved(t *testing.T) {
 	capturedUUID = uuid
 
 	// Directly test pollForCallback with a server that returns the right callback
-	approved, err := ta.pollForCallback(context.Background(), uuid)
+	approved, _, err := ta.pollForCallback(context.Background(), uuid)
 	if err != nil {
 		t.Fatalf("pollForCallback: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestPollForCallbackDenied(t *testing.T) {
 	defer srv.Close()
 
 	ta := newTestApprover(srv.URL)
-	approved, err := ta.pollForCallback(context.Background(), uuid)
+	approved, _, err := ta.pollForCallback(context.Background(), uuid)
 	if err != nil {
 		t.Fatalf("pollForCallback deny: %v", err)
 	}
